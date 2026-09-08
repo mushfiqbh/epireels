@@ -1,0 +1,172 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// =============================================================================
+// USERS
+// =============================================================================
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  username     String   @unique
+  passwordHash String   @map("password_hash")
+  displayName  String?  @map("display_name")
+  avatarUrl    String?  @map("avatar_url")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  playlists     Playlist[]
+  watchHistory  WatchHistory[]
+  likes         Like[]
+
+  @@map("users")
+}
+
+// =============================================================================
+// CATALOG: SERIES -> SEASONS -> EPISODES -> VIDEOS
+// =============================================================================
+model Series {
+  id          String   @id @default(cuid())
+  title       String
+  slug        String   @unique
+  description String?  @db.Text
+  thumbnailUrl String? @map("thumbnail_url")
+  status      String   @default("draft")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  seasons Season[]
+
+  @@index([status])
+  @@map("series")
+}
+
+model Season {
+  id            String   @id @default(cuid())
+  seriesId      String   @map("series_id")
+  seasonNumber  Int      @map("season_number")
+  title         String
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  series   Series    @relation(fields: [seriesId], references: [id], onDelete: Cascade)
+  episodes Episode[]
+
+  @@unique([seriesId, seasonNumber])
+  @@index([seriesId])
+  @@map("seasons")
+}
+
+model Episode {
+  id               String   @id @default(cuid())
+  seasonId         String   @map("season_id")
+  episodeNumber    Int      @map("episode_number")
+  title            String
+  description      String?  @db.Text
+  thumbnailUrl     String?  @map("thumbnail_url")
+  durationSeconds  Int      @default(0) @map("duration_seconds")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  season        Season         @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  videos        Video[]
+  playlistItems PlaylistItem[]
+  watchHistory  WatchHistory[]
+  likes         Like[]
+
+  @@unique([seasonId, episodeNumber])
+  @@index([seasonId])
+  @@map("episodes")
+}
+
+model Video {
+  id               String   @id @default(cuid())
+  episodeId        String   @map("episode_id")
+  filePath         String   @map("file_path")
+  mimeType         String   @map("mime_type")
+  fileSize         BigInt   @map("file_size")
+  durationSeconds  Int      @default(0) @map("duration_seconds")
+  width            Int      @default(0)
+  height           Int      @default(0)
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+
+  @@index([episodeId])
+  @@map("videos")
+}
+
+// =============================================================================
+// PLAYLISTS
+// =============================================================================
+model Playlist {
+  id          String   @id @default(cuid())
+  userId      String   @map("user_id")
+  title       String
+  description String?  @db.Text
+  isPublic    Boolean  @default(false) @map("is_public")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  user  User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items PlaylistItem[]
+
+  @@index([userId])
+  @@map("playlists")
+}
+
+model PlaylistItem {
+  id         String   @id @default(cuid())
+  playlistId String   @map("playlist_id")
+  episodeId  String   @map("episode_id")
+  position   Int
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  playlist Playlist @relation(fields: [playlistId], references: [id], onDelete: Cascade)
+  episode  Episode  @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+
+  @@unique([playlistId, position])
+  @@unique([playlistId, episodeId])
+  @@index([playlistId])
+  @@index([episodeId])
+  @@map("playlist_items")
+}
+
+// =============================================================================
+// ENGAGEMENT
+// =============================================================================
+model WatchHistory {
+  id              String   @id @default(cuid())
+  userId          String   @map("user_id")
+  episodeId       String   @map("episode_id")
+  progressSeconds Int      @default(0) @map("progress_seconds")
+  completed       Boolean  @default(false)
+  watchedAt       DateTime @default(now()) @map("watched_at")
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+
+  @@index([userId, watchedAt])
+  @@index([episodeId])
+  @@map("watch_history")
+}
+
+model Like {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  episodeId String   @map("episode_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, episodeId])
+  @@index([userId])
+  @@index([episodeId])
+  @@map("likes")
+}
