@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "Acme Mobile",
+    "slug": "acme-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "acmemobile",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "backgroundColor": "#0f0f0f"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.acme.mobile"
+    },
+    "android": {
+      "package": "com.acme.mobile"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    },
+    "plugins": ["expo-router"],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
