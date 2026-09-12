@@ -85,15 +85,22 @@ export class SeriesService {
       description: string | null;
       thumbnailUrl: string | null;
       durationSeconds: number;
-      videos: { filePath: string; mimeType: string }[];
+      videos: {
+        id: string;
+        filePath: string;
+        mimeType: string;
+        processingStatus: string;
+      }[];
     },
     parentStatus: string,
   ): EpisodeResponseDto {
     const firstVideo = episode.videos[0];
     const video: VideoMediaDto | null = firstVideo
       ? {
+          id: firstVideo.id,
           url: this.storage.getUrl(firstVideo.filePath),
           type: firstVideo.mimeType,
+          processingStatus: firstVideo.processingStatus,
         }
       : null;
 

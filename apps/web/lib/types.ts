@@ -22,6 +22,12 @@ export interface VideoCut {
   aspectRatio: "9:16" | "16:9";
 }
 
+export type VideoProcessingStatus =
+  | "UPLOADED"
+  | "PROCESSING"
+  | "READY"
+  | "FAILED";
+
 /** Episode metadata surfaced in the player. */
 export interface Episode {
   id: string;
@@ -36,6 +42,8 @@ export interface Episode {
     mobile: VideoCut;
     desktop: VideoCut;
   };
+  videoId?: string;
+  processingStatus?: VideoProcessingStatus;
   creatorNotes: string;
   synopsis: string;
   likes: number;

@@ -44,6 +44,9 @@ lerna-debug.log*
 # coverage
 coverage/
 
+# storage
+storage/
+
 # temp
 .tmp/
 .temp/

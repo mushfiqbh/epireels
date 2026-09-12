@@ -1,8 +1,10 @@
 export type EpisodeStatus = 'draft' | 'published' | 'archived';
 
 export class VideoMediaDto {
+  id!: string;
   url!: string;
   type!: string;
+  processingStatus!: string;
 }
 
 export class EpisodeResponseDto {

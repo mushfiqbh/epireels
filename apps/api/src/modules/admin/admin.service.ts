@@ -9,6 +9,7 @@ import * as path from 'path';
 import { PrismaService } from '../../prisma/prisma.service';
 import { STORAGE_SERVICE } from '../storage/storage.interface';
 import type { StorageService } from '../storage/storage.interface';
+import { VideoProcessor } from '../video/video.processor';
 import type { AdminUploadResponseDto } from './dto/admin-upload.dto';
 import { probeMp4 } from './mp4-probe';
 
@@ -46,6 +47,7 @@ export class AdminService {
     private readonly prisma: PrismaService,
     @Inject(STORAGE_SERVICE)
     private readonly storage: StorageService,
+    private readonly videoProcessor: VideoProcessor,
   ) {}
 
   /**
@@ -76,8 +78,15 @@ export class AdminService {
       throw new BadRequestException('A `file` multipart field is required.');
     }
 
+    if (!params.episodeTitle) {
+      throw new BadRequestException(
+        '`episodeTitle` is required for video processing uploads.',
+      );
+    }
+
     const ext = path.extname(params.file.originalname).toLowerCase() || '.mp4';
-    const key = `uploads/${new Date().toISOString().slice(0, 10)}/${randomUUID()}${ext}`;
+    const videoId = randomUUID();
+    const key = `originals/${videoId}/original${ext}`;
 
     await this.storage.upload(params.file.buffer, key, params.file.mimetype);
     const url = this.storage.getUrl(key);
@@ -105,13 +114,13 @@ export class AdminService {
       durationSeconds: probed.durationSeconds,
       width: probed.width,
       height: probed.height,
+      videoId,
+      processingStatus: 'UPLOADED',
     };
 
-    // Only attach to an Episode row when an episode title is supplied.
-    // The /admin page always sends one, but a raw API consumer might
-    // want a "storage-only" smoke test.
-    if (params.episodeTitle) {
+    try {
       const episode = await this.attachEpisode({
+        videoId,
         seriesId: params.seriesId,
         seriesTitle: params.seriesTitle,
         seasonNumber: params.seasonNumber,
@@ -130,7 +139,12 @@ export class AdminService {
         title: episode.title,
         seriesId: episode.season.seriesId,
       };
+    } catch (error) {
+      await this.storage.delete(key);
+      throw error;
     }
+
+    void this.videoProcessor.process(videoId);
 
     return response;
   }
@@ -138,6 +152,7 @@ export class AdminService {
   /** Ensure Series + Season exist and create an Episode + Video row
    *  pointing at the freshly uploaded file. */
   private async attachEpisode(input: {
+    videoId: string;
     seriesId?: string;
     seriesTitle?: string;
     seasonNumber?: number;
@@ -216,6 +231,7 @@ export class AdminService {
         durationSeconds,
         videos: {
           create: {
+            id: input.videoId,
             filePath: input.filePath,
             mimeType: input.mimeType,
             fileSize: BigInt(input.fileSize),
@@ -233,10 +249,12 @@ export class AdminService {
 }
 
 function slugify(input: string): string {
-  return input
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 80) || `series-${Date.now()}`;
+  return (
+    input
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 80) || `series-${Date.now()}`
+  );
 }

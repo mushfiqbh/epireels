@@ -24,8 +24,18 @@ import type {
 // ── Wire-format DTOs ──────────────────────────────────────────────
 
 export interface EpisodeMediaDto {
+  id?: string;
   url: string;
   type: string;
+  processingStatus?: "UPLOADED" | "PROCESSING" | "READY" | "FAILED";
+}
+
+export interface VideoPlaybackDto {
+  videoId: string;
+  status: "UPLOADED" | "PROCESSING" | "READY" | "FAILED";
+  posterUrl?: string;
+  manifestUrl?: string;
+  error?: string;
 }
 
 export interface EpisodeResponseDto {
@@ -113,6 +123,8 @@ export function mapEpisode(dto: EpisodeResponseDto): Episode {
     description: dto.synopsis ?? "",
     duration: formatDuration(dto.duration),
     video: { mobile, desktop },
+    videoId: dto.video?.id,
+    processingStatus: dto.video?.processingStatus,
     creatorNotes: "",
     synopsis: dto.synopsis ?? "",
     likes: dto.likes ?? 0,
@@ -192,4 +204,12 @@ export async function fetchSeriesFeed(seriesId: string): Promise<ReelItem[]> {
     episode,
     episodeIndex,
   }));
+}
+
+export async function fetchVideoPlayback(
+  videoId: string,
+): Promise<VideoPlaybackDto> {
+  return apiFetch<VideoPlaybackDto>(
+    `/api/v1/videos/${encodeURIComponent(videoId)}/playback`,
+  );
 }

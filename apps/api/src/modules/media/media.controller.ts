@@ -62,10 +62,7 @@ interface ParsedRange {
   end: number;
 }
 
-function parseRange(
-  header: string,
-  totalSize: number,
-): ParsedRange {
+function parseRange(header: string, totalSize: number): ParsedRange {
   const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
   if (!match) {
     throw new BadRequestException(
@@ -111,6 +108,10 @@ function parseRange(
 function inferMimeType(key: string): string {
   const ext = key.toLowerCase().split('.').pop() ?? '';
   switch (ext) {
+    case 'm3u8':
+      return 'application/vnd.apple.mpegurl';
+    case 'm4s':
+      return 'video/iso.segment';
     case 'mp4':
       return 'video/mp4';
     case 'webm':
@@ -134,26 +135,20 @@ function inferMimeType(key: string): string {
 }
 
 function safeKeyFromPath(rawPath: string | string[]): string {
-  const segments = Array.isArray(rawPath)
-    ? rawPath
-    : [rawPath];
+  const segments = Array.isArray(rawPath) ? rawPath : [rawPath];
 
   if (segments.length === 0) {
     throw new BadRequestException('Empty media path.');
   }
 
-  const joined = segments
-    .flatMap((segment) => segment.split(','))
-    .join('/');
+  const joined = segments.flatMap((segment) => segment.split(',')).join('/');
 
   if (
     joined.includes('..') ||
     joined.startsWith('/') ||
     /^[A-Za-z]:[\\/]/.test(joined)
   ) {
-    throw new BadRequestException(
-      'Path traversal is not allowed.',
-    );
+    throw new BadRequestException('Path traversal is not allowed.');
   }
 
   return joined.replace(/^\/+/, '');
@@ -174,10 +169,7 @@ export class MediaController {
    * Nest's auto-pipeline, so we still need this for `/media/*`.
    */
   @Options('*path')
-  preflight(
-    @Req() req: Request,
-    @Res() res: Response,
-  ): void {
+  preflight(@Req() req: Request, @Res() res: Response): void {
     applyMediaCorsHeaders(req, res);
     res.status(204).end();
   }
@@ -189,6 +181,10 @@ export class MediaController {
     @Res() res: Response,
   ): Promise<void> {
     const key = safeKeyFromPath(rawPath);
+
+    if (!key.startsWith('streams/') && !key.startsWith('thumbnails/')) {
+      throw new NotFoundException(`Media not found: ${key}`);
+    }
 
     const exists = await this.storage.exists(key);
     if (!exists) {

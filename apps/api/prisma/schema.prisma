@@ -93,7 +93,12 @@ model Video {
   durationSeconds  Int      @default(0) @map("duration_seconds")
   width            Int      @default(0)
   height           Int      @default(0)
+  processingStatus  String   @default("UPLOADED") @map("processing_status")
+  thumbnailPath     String?  @map("thumbnail_path")
+  streamPath        String?  @map("stream_path")
+  processingError   String?  @db.Text @map("processing_error")
   createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
 
   episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
 

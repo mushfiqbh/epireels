@@ -8,10 +8,7 @@ import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { Readable } from 'stream';
-import {
-  StorageResourceStats,
-  StorageService,
-} from '../storage.interface';
+import { StorageResourceStats, StorageService } from '../storage.interface';
 
 /**
  * Local-filesystem implementation of {@link StorageService}.
@@ -22,24 +19,37 @@ import {
  * base directory, preventing directory-traversal attacks.
  */
 @Injectable()
-export class LocalStorageService
-  implements StorageService, OnModuleInit
-{
+export class LocalStorageService implements StorageService, OnModuleInit {
   private readonly logger = new Logger(LocalStorageService.name);
   private baseDir!: string;
   private readonly baseUrlPath = '/media';
 
   onModuleInit(): void {
     const rawBase = process.env.STORAGE_LOCAL_PATH ?? './storage/development';
-    const resolved = path.resolve(process.cwd(), rawBase);
+    const configured = path.resolve(process.cwd(), rawBase);
+    const repositoryStorage = path.resolve(
+      __dirname,
+      '../../../../../../storage/development',
+    );
+    const resolved = path.isAbsolute(rawBase)
+      ? configured
+      : this.directoryExists(configured)
+        ? configured
+        : repositoryStorage;
     this.baseDir = path.normalize(resolved);
     this.logger.log(`LocalStorageService base directory: ${this.baseDir}`);
   }
 
+  private directoryExists(directory: string): boolean {
+    try {
+      return fs.statSync(directory).isDirectory();
+    } catch {
+      return false;
+    }
+  }
+
   private resolveSafePath(key: string): string {
-    const normalisedKey = path
-      .normalize(key)
-      .replace(/^([./\\]+)/, '');
+    const normalisedKey = path.normalize(key).replace(/^([./\\]+)/, '');
 
     const candidate = path.normalize(path.join(this.baseDir, normalisedKey));
 
@@ -47,10 +57,7 @@ export class LocalStorageService
       ? this.baseDir
       : `${this.baseDir}${path.sep}`;
 
-    if (
-      candidate !== this.baseDir &&
-      !candidate.startsWith(baseWithSep)
-    ) {
+    if (candidate !== this.baseDir && !candidate.startsWith(baseWithSep)) {
       throw new InternalServerErrorException(
         'Invalid storage key: path traversal detected.',
       );
@@ -62,8 +69,9 @@ export class LocalStorageService
   async upload(
     fileBuffer: Buffer,
     key: string,
-    _mimeType: string,
+    mimeType: string,
   ): Promise<string> {
+    void mimeType;
     const targetPath = this.resolveSafePath(key);
     await fsp.mkdir(path.dirname(targetPath), { recursive: true });
     await fsp.writeFile(targetPath, fileBuffer);
@@ -128,9 +136,16 @@ export class LocalStorageService
     // the API (localhost:4000), so a relative URL gets resolved against
     // the wrong host and the request 404s. Defaults to
     // http://localhost:4000 to match the dev .env example.
-    const rawBase =
-      process.env.APP_BASE_URL ?? 'http://localhost:4000';
+    const rawBase = process.env.APP_BASE_URL ?? 'http://localhost:4000';
     const base = rawBase.replace(/\/+$/, '');
     return `${base}${relative}`;
+  }
+
+  getPath(key: string): string {
+    return this.resolveSafePath(key);
+  }
+
+  async removeDirectory(key: string): Promise<void> {
+    await fsp.rm(this.resolveSafePath(key), { recursive: true, force: true });
   }
 }

@@ -14,10 +14,12 @@ export interface AdminUploadEpisode {
 }
 
 export interface AdminUploadResponse {
+  videoId: string;
   key: string;
   url: string;
   mimeType: string;
   size: number;
+  processingStatus: "UPLOADED" | "PROCESSING" | "READY" | "FAILED";
   episode?: AdminUploadEpisode;
 }
 

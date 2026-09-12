@@ -92,11 +92,6 @@ export default function ReelFeed({
             best = entry;
           }
         }
-        console.warn(
-          "[EpiReels:obs] scrollTop=", container.scrollTop,
-          "entries=", entries.map((e) => ({ i: (e.target as HTMLElement).dataset.reelIndex, r: Math.round(e.intersectionRatio * 100) / 100, vis: e.isIntersecting })),
-          "best=", best ? (best.target as HTMLElement).dataset.reelIndex : null
-        );
         if (best) {
           const index = Number(
             (best.target as HTMLElement).dataset.reelIndex

@@ -7,6 +7,8 @@
  * attached when one was requested.
  */
 export interface AdminUploadResponseDto {
+  /** Persisted Video id used by the playback endpoint. */
+  videoId: string;
   /** Storage key the file was written to (relative to STORAGE_LOCAL_PATH). */
   key: string;
   /** Public URL the media controller will serve, e.g. `/media/uploads/...`. */
@@ -26,6 +28,8 @@ export interface AdminUploadResponseDto {
   width: number;
   /** Intrinsic height in pixels. */
   height: number;
+  /** Current asynchronous processing state. */
+  processingStatus: string;
   /** Episode the uploaded video was attached to, if any. */
   episode?: {
     id: string;
