@@ -1,8 +1,4 @@
-import {
-  Controller,
-  Get,
-  Param,
-} from '@nestjs/common';
+import { Controller, Get, Param } from '@nestjs/common';
 import { EpisodesService } from './episodes.service';
 import { EpisodeResponseDto } from './dto/episode-response.dto';
 

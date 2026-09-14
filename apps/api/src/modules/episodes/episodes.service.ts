@@ -47,8 +47,10 @@ export class EpisodesService {
     const firstVideo = episode.videos[0];
     const video: VideoMediaDto | null = firstVideo
       ? {
+          id: firstVideo.id,
           url: this.storageService.getUrl(firstVideo.filePath),
           type: firstVideo.mimeType,
+          processingStatus: firstVideo.processingStatus,
         }
       : null;
 

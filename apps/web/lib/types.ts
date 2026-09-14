@@ -1,28 +1,38 @@
 /**
- * EpiReels — shared front-end types.
+ * EpiReels — front-end type entry point.
  *
- * These types describe the shape the React components consume. They are
- * produced by the API client in `lib/api/reels.ts`, which maps the slimmer
- * `EpisodeResponseDto` (and the new `SeriesResponseDto`) from the Nest
- * backend into the richer structures the player expects.
- *
- * Fields the API does not yet expose (likes, commentsCount, creator
- * avatar, etc.) are filled with safe defaults in the adapter — they will
- * be replaced by real values once the corresponding endpoints land.
+ * Wire-format DTOs (`EpisodeResponseDto`, `SeriesResponseDto`,
+ * `VideoPlaybackDto`, `AdminUploadResponseDto`, `Comment`, status unions)
+ * are owned by `@epireels/types` so the API and the client can never drift
+ * apart. This module re-exports them and adds the front-end-only enriched
+ * shapes (`Episode`, `Series`, `ReelItem`) that the React components
+ * consume — these carry fields the wire doesn't expose (mobile/desktop
+ * video cuts, engagement defaults, etc.) and are produced by the adapter
+ * in `lib/api/reels.ts`.
  */
 
-export type EpisodeStatus = "draft" | "published" | "archived";
+import type {
+  Comment,
+  EpisodeResponseDto,
+  EpisodeStatus,
+  SeriesResponseDto,
+  SeriesStatus,
+  VideoCut,
+  VideoProcessingStatus,
+} from "@epireels/types";
+
+export type {
+  Comment,
+  EpisodeResponseDto,
+  EpisodeStatus,
+  SeriesResponseDto,
+  SeriesStatus,
+  VideoCut,
+  VideoProcessingStatus,
+};
 
 /** One playable cut of an episode. The mobile/desktop pair lets the
  *  player pick the right aspect ratio for the device. */
-export interface VideoCut {
-  url: string;
-  thumbnail: string;
-  label: string;
-  aspectRatio: "9:16" | "16:9";
-}
-
-/** Episode metadata surfaced in the player. */
 export interface Episode {
   id: string;
   /** Episode number within its season (1-indexed). */
@@ -36,6 +46,8 @@ export interface Episode {
     mobile: VideoCut;
     desktop: VideoCut;
   };
+  videoId?: string;
+  processingStatus?: VideoProcessingStatus;
   creatorNotes: string;
   synopsis: string;
   likes: number;
@@ -57,7 +69,7 @@ export interface Series {
   genre: string[];
   /** Tailwind colour index for theming accents (optional, default 0). */
   accent: number;
-  status: "draft" | "published" | "archived";
+  status: SeriesStatus;
   /** Total number of episodes in the series. */
   totalEpisodes: number;
   /** Episodes in playback order. */
@@ -69,16 +81,4 @@ export interface ReelItem {
   series: Series;
   episode: Episode;
   episodeIndex: number;
-}
-
-/** Comment payload for the comment drawer. */
-export interface Comment {
-  id: string;
-  user: string;
-  handle: string;
-  avatar: string;
-  /** Human-readable relative time. */
-  time: string;
-  text: string;
-  likes: number;
 }

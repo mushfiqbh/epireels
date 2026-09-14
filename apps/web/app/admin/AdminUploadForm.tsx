@@ -302,8 +302,12 @@ function ResultPreview({ response }: { response: AdminUploadResponse }) {
   return (
     <div className="rounded-md border border-white/10 bg-ink/60 px-4 py-3 text-xs text-white/70">
       <div>
-        <span className="text-white/40">Public URL:</span>{" "}
-        <code className="bg-white/10 px-1">{response.url}</code>
+        <span className="text-white/40">Source key:</span>{" "}
+        <code className="bg-white/10 px-1">{response.key}</code>
+      </div>
+      <div>
+        <span className="text-white/40">Processing:</span>{" "}
+        {response.processingStatus}
       </div>
       <div>
         <span className="text-white/40">MIME:</span> {response.mimeType}

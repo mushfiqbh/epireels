@@ -13,9 +13,7 @@ import { STORAGE_SERVICE } from './storage.interface';
     {
       provide: STORAGE_SERVICE,
       useFactory: () => {
-        const driver = (
-          process.env.STORAGE_DRIVER ?? 'local'
-        ).toLowerCase();
+        const driver = (process.env.STORAGE_DRIVER ?? 'local').toLowerCase();
         const logger = new Logger('StorageModule');
 
         switch (driver) {

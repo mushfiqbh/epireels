@@ -12,6 +12,7 @@ import {
 import { Maximize2, Minimize2, Pause, Play, RectangleHorizontal, RotateCcw, RotateCw, Volume2, VolumeX } from "lucide-react";
 import type { Episode } from "@/lib/types";
 import { clamp, formatTime } from "@/lib/utils";
+import { fetchVideoPlayback } from "@/lib/api/reels";
 
 export interface VideoHandle {
   /** Seek to a fraction of the video's duration (0 → 1). */
@@ -79,6 +80,22 @@ export default function VideoPlayer({
   const progressRef = useRef<HTMLDivElement | null>(null);
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isDesktop = useRef(false);
+  /**
+   * Wired to the "Retry" affordance on the terminal error overlay.
+   * The polling effect installs a callback into this ref so the
+   * button can re-arm the poller without forcing a remount of the
+   * whole player tree.
+   */
+  const retryRef = useRef<(() => void) | null>(null);
+  /**
+   * Tracks how many times the <video> element has raised `onError`
+   * for the current source. The first manifest-fetch failure
+   * legitimately means the HLS pipeline is still writing chunks to
+   * disk, so we silently re-arm the poller. Anything beyond the
+   * retry cap (or a non-network code) flips the player into the
+   * terminal "Video unavailable" state.
+   */
+  const mediaErrorCountRef = useRef(0);
 
   const [userPaused, setUserPaused] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -94,11 +111,127 @@ export default function VideoPlayer({
     src: string;
     ratio: number;
   } | null>(null);
+  const [playbackSrc, setPlaybackSrc] = useState("");
+  const [playbackPoster, setPlaybackPoster] = useState<string | null>(null);
+  const [playbackStatus, setPlaybackStatus] = useState<string | null>(null);
+  const [playbackError, setPlaybackError] = useState<string | null>(null);
 
   // Every episode carries both cuts in one object — pick the cut that
   // matches the current view: 16:9 on desktop, 9:16 on mobile.
-  const { url: src, thumbnail: poster } =
+  const { url: directSrc, thumbnail: directPoster } =
     episode.video[landscape ? "desktop" : "mobile"];
+  const src = episode.videoId ? playbackSrc : directSrc;
+  const poster = playbackPoster ?? directPoster;
+  const isHlsSource = src.toLowerCase().includes(".m3u8");
+
+  useEffect(() => {
+    setPlaybackSrc(episode.videoId ? "" : directSrc);
+    setPlaybackPoster(null);
+    setPlaybackStatus(episode.videoId ? "UPLOADED" : "READY");
+    setPlaybackError(null);
+    if (!episode.videoId || !isNear) return;
+
+    // Cap background polling so a stuck/missing media record can't leave
+    // the player parked on "Preparing video…" forever — once the backend
+    // reports FAILED or surfaces an error, or once we've exhausted the
+    // retry budget, we render the terminal state instead of polling on.
+    const MAX_PLAYBACK_RETRIES = 10;
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let pollAttempts = 0;
+    const loadPlayback = async () => {
+      pollAttempts += 1;
+      try {
+        const playback = await fetchVideoPlayback(episode.videoId!);
+        if (cancelled) return;
+        setPlaybackStatus(playback.status);
+        setPlaybackSrc(playback.manifestUrl ?? "");
+        setPlaybackPoster(playback.posterUrl ?? null);
+        // Surface the backend's verbatim message (truncated server-side to
+        // ~4000 chars) so missing-ffmpeg / codec / filesystem issues show
+        // up in the UI instead of a generic "video unavailable".
+        setPlaybackError(playback.error ?? null);
+        if (
+          (playback.status === "UPLOADED" || playback.status === "PROCESSING") &&
+          pollAttempts < MAX_PLAYBACK_RETRIES
+        ) {
+          retryTimer = setTimeout(loadPlayback, 3000);
+        } else if (
+          playback.status !== "READY" &&
+          pollAttempts >= MAX_PLAYBACK_RETRIES
+        ) {
+          setPlaybackStatus("FAILED");
+          setPlaybackError((prev) => prev ?? "Playback status is unavailable.");
+        }
+      } catch {
+        if (!cancelled) {
+          setPlaybackStatus("FAILED");
+          setPlaybackError((prev) => prev ?? "Playback status is unavailable.");
+        }
+      }
+    };
+    /**
+     * Manual retry entry point — exposed via the `retryRef` so the
+     * terminal error overlay can re-kick the poller without remounting
+     * the whole player.
+     */
+    retryRef.current = () => {
+      pollAttempts = 0;
+      if (retryTimer) clearTimeout(retryTimer);
+      setPlaybackStatus("PROCESSING");
+      setPlaybackError(null);
+      void loadPlayback();
+    };
+    void loadPlayback();
+
+    return () => {
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
+      retryRef.current = null;
+    };
+  }, [directSrc, episode.videoId, isNear]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !src) return;
+    let hls: { destroy: () => void } | null = null;
+    if (!isHlsSource) {
+      video.src = src;
+      video.load();
+      return () => {
+        video.pause();
+        video.removeAttribute("src");
+        video.load();
+      };
+    }
+
+    if (video.canPlayType("application/vnd.apple.mpegurl")) {
+      video.src = src;
+      video.load();
+      return () => {
+        video.pause();
+        video.removeAttribute("src");
+        video.load();
+      };
+    }
+
+    let disposed = false;
+    import("hls.js").then(({ default: Hls }) => {
+      if (disposed || !Hls.isSupported()) return;
+      const instance = new Hls({ enableWorker: true });
+      hls = instance;
+      instance.loadSource(src);
+      instance.attachMedia(video);
+    });
+
+    return () => {
+      disposed = true;
+      hls?.destroy();
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+    };
+  }, [isHlsSource, src]);
 
   // Fallback readout before <video> metadata arrives (episode.duration).
   const fallbackDuration = episode.duration
@@ -128,19 +261,13 @@ export default function VideoPlayer({
     const video = videoRef.current;
     if (!video) return;
     video.muted = muted;
-    if (isActive && !userPaused) {
+    if (isActive && !userPaused && src) {
       // Unmute happens inside a user gesture, so this play() is allowed.
-      console.warn("[EpiReels:play] trying", episode.id, "muted=", muted);
-      video.play().then(() => {
-        console.warn("[EpiReels:play] playing", episode.id);
-      }).catch((err) => {
-        console.warn("[EpiReels:play] REJECTED", episode.id, err.name, err.message);
-      });
+      void video.play().catch(() => undefined);
     } else {
-      console.warn("[EpiReels:play] pausing", episode.id);
       video.pause();
     }
-  }, [isActive, userPaused, muted, episode.id]);
+  }, [isActive, userPaused, muted, episode.id, src]);
 
   // ── Seeking ───────────────────────────────────────────────────
   const seekToFraction = useCallback((fraction: number) => {
@@ -345,7 +472,7 @@ export default function VideoPlayer({
   return (
     <div
       className={`group absolute inset-0 cursor-pointer overflow-hidden bg-[#090a0f] ${
-+        isFullscreen ? "p-0" : "md:p-32" }`}
+        isFullscreen ? "p-0" : "md:p-32"}`}
       onClick={togglePlay}
       role="button"
       aria-label={userPaused ? "Play video" : "Pause video"}
@@ -377,7 +504,7 @@ export default function VideoPlayer({
         >
           <video
             ref={videoRef}
-            src={src}
+            src={isHlsSource ? undefined : src || undefined}
             poster={poster}
             muted={muted}
             playsInline
@@ -408,15 +535,51 @@ export default function VideoPlayer({
             }}
             onProgress={handleBuffered}
             onWaiting={showControls}
-            onError={(e) =>
-              console.warn(
-                "[EpiReels:video] error",
-                episode.id,
-                src,
-                e.currentTarget.error,
-              )
-            }
+            onError={(e) => {
+              const video = e.currentTarget;
+              const code = video.error?.code;
+              // MEDIA_ERR_SRC_NOT_SUPPORTED (4) / MEDIA_ERR_DECODE (3) /
+              // MEDIA_ERR_NETWORK (2) all surface a terminal problem
+              // (codec, manifest missing, etc.). MEDIA_ERR_ABORTED (1)
+              // is fired by our own cleanup and must be ignored.
+              if (code === 1) return;
+              mediaErrorCountRef.current += 1;
+              if (code === 2 || code === 4) {
+                mediaErrorCountRef.current = 0;
+                if (retryRef.current) retryRef.current();
+                return;
+              }
+              if (code === 3 && mediaErrorCountRef.current <= 2) {
+                video.load();
+                return;
+              }
+              setPlaybackStatus("FAILED");
+              setPlaybackError(
+                playbackError ?? `Browser rejected the stream (code ${code ?? "?"}).`,
+              );
+            }}
           />
+          {episode.videoId && isActive && !src && playbackStatus !== "FAILED" ? (
+            <div className="pointer-events-none absolute inset-x-0 bottom-24 text-center text-xs font-medium text-white/70">
+              Preparing video…
+            </div>
+          ) : isActive && (playbackStatus === "FAILED" || playbackError) ? (
+            <div className="absolute inset-x-0 bottom-24 flex flex-col items-center gap-3 px-6 text-center">
+              <div className="max-w-md text-xs font-medium text-white/80">
+                {playbackError || "Video unavailable"}
+              </div>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  retryRef.current?.();
+                }}
+                className="pointer-events-auto rounded-full bg-white/15 px-4 py-1.5 text-xs font-semibold text-white backdrop-blur-sm transition hover:bg-white/25"
+              >
+                Retry
+              </button>
+            </div>
+          ) : null}
 
       {/* Top-left mute toggle — pinned to the video frame and gated by the
           same auto-hide as the rest of the controls so it disappears while

@@ -1,24 +1,14 @@
-export type EpisodeStatus = 'draft' | 'published' | 'archived';
-
-export class VideoMediaDto {
-  url!: string;
-  type!: string;
-}
-
-export class EpisodeResponseDto {
-  id!: string;
-  title!: string;
-  number!: number;
-  duration?: number;
-  status!: EpisodeStatus;
-  video!: VideoMediaDto | null;
-  thumbnailUrl!: string | null;
-  /** Short description / show-notes for the episode. */
-  synopsis?: string;
-  /** Synthetic engagement metrics — front-end fills defaults when absent. */
-  likes?: number;
-  /** Synthetic engagement metrics — front-end fills defaults when absent. */
-  commentsCount?: number;
-  /** Creator / author display name for the episode. */
-  creator?: string;
-}
+/**
+ * Episode DTOs — re-exported from the shared `@epireels/types` package so
+ * every API route, the front-end client, and the React components agree
+ * on the wire shape.
+ *
+ * The historical module-local `class` definitions were removed; consumers
+ * should import the `EpisodeResponseDto` / `EpisodeStatus` symbols from
+ * `@epireels/types` (or from this module, which just re-exports them).
+ */
+export type {
+  EpisodeResponseDto,
+  EpisodeStatus,
+  VideoMediaDto,
+} from '@epireels/types';

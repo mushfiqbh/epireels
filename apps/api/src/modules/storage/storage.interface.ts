@@ -15,6 +15,8 @@ export interface StorageService {
   ): Promise<Readable>;
   getStats(key: string): Promise<StorageResourceStats>;
   getUrl(key: string): string;
+  getPath(key: string): string;
+  removeDirectory(key: string): Promise<void>;
 }
 
 export const STORAGE_SERVICE = 'STORAGE_SERVICE';

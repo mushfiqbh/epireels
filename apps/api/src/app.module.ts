@@ -7,6 +7,7 @@ import { MediaModule } from './modules/media/media.module';
 import { SeriesModule } from './modules/series/series.module';
 import { StorageModule } from './modules/storage/storage.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { VideoModule } from './modules/video/video.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { PrismaModule } from './prisma/prisma.module';
     EpisodesModule,
     SeriesModule,
     AdminModule,
+    VideoModule,
   ],
   controllers: [AppController],
   providers: [AppService],

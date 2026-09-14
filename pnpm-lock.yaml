@@ -175,6 +175,9 @@ importers:
       '@epireels/types':
         specifier: workspace:*
         version: link:../../packages/types
+      hls.js:
+        specifier: ^1.7.2
+        version: 1.7.2
       lucide-react:
         specifier: ^1.28.0
         version: 1.34.0(react@19.2.4)
@@ -3594,6 +3597,9 @@ packages:
 
   hermes-parser@0.29.1:
     resolution: {integrity: sha512-xBHWmUtRC5e/UL0tI7Ivt2riA/YBq9+SiYFU7C1oBa/j2jYGlIF9043oak1F47ihuDIxQ5nbsKueYJDRY02UgA==}
+
+  hls.js@1.7.2:
+    resolution: {integrity: sha512-CW/pPvSOFIRsosbwxrYaE9ERmpTo5fbTqL7wCvuCFlqW1Bmb1K5fXsY7yiH95rmlr4rVuA7UXHbM/cIXQ6AXwg==}
 
   hoist-non-react-statics@3.3.2:
     resolution: {integrity: sha512-/gGivxi8JPKWNm/W0jSmzcMPpfpPLc3dY/6GxhX2hQ9iGj3aDfklV4ET7NjKpSinLpJ5vafa9iiGIEZg10SfBw==}
@@ -10158,6 +10164,8 @@ snapshots:
   hermes-parser@0.29.1:
     dependencies:
       hermes-estree: 0.29.1
+
+  hls.js@1.7.2: {}
 
   hoist-non-react-statics@3.3.2:
     dependencies:

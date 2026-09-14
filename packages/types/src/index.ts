@@ -124,3 +124,178 @@ export interface BuildInfo {
   /** ISO-8601 build timestamp. */
   builtAt: ISODateString;
 }
+
+// ─── Content domains (shared between api + web + mobile) ───────────────────
+//
+// These types describe the wire shape returned by the public API. Both
+// `apps/api` (Nest controllers/services) and `apps/web` (Next.js client +
+// React components) import them from this package so the front-end and the
+// back-end can never drift apart silently.
+
+/** Lifecycle of a single Episode / Series row. */
+export type EpisodeStatus = "draft" | "published" | "archived";
+export type SeriesStatus = "draft" | "published" | "archived";
+
+/** Asynchronous video-processing state (Prisma `Video.processingStatus`). */
+export type VideoProcessingStatus =
+  | "UPLOADED"
+  | "PROCESSING"
+  | "READY"
+  | "FAILED";
+
+/** Single playable render of a video. The mobile/desktop pair lets the
+ *  player pick the right aspect ratio for the device. */
+export interface VideoCut {
+  url: string;
+  thumbnail: string;
+  label: string;
+  aspectRatio: "9:16" | "16:9";
+}
+
+/** Media row attached to an Episode (Prisma `Video`). */
+export interface VideoMediaDto {
+  id: string;
+  url: string;
+  type: string;
+  processingStatus: VideoProcessingStatus | string;
+}
+
+/** Episode metadata surfaced in the player / feed. */
+export interface EpisodeResponseDto {
+  id: string;
+  title: string;
+  /** Episode number within its season (1-indexed). */
+  number: number;
+  /** Duration in seconds. */
+  duration?: number;
+  status: EpisodeStatus;
+  video: VideoMediaDto | null;
+  /** Public URL for the episode poster / thumbnail. */
+  thumbnailUrl: string | null;
+  /** Short description / show-notes for the episode. */
+  synopsis?: string | null;
+  /** Like count. Optional — back-end fills defaults when absent. */
+  likes?: number;
+  /** Comment count. Optional. */
+  commentsCount?: number;
+  /** Creator / author display name. */
+  creator?: string;
+}
+
+/** Lightweight series summary used by `GET /api/v1/series` (no episodes). */
+export interface SeriesSummaryDto {
+  id: string;
+  title: string;
+  slug: string;
+  creator: string;
+  coverImage: string | null;
+  tagline: string;
+  genre: string[];
+  /** Tailwind accent index used by the front-end for theming. */
+  accent: number;
+  status: SeriesStatus;
+  /** Total number of episodes in the series. */
+  totalEpisodes: number;
+}
+
+/** Full series payload returned by `GET /api/v1/series/:id`. */
+export interface SeriesResponseDto extends SeriesSummaryDto {
+  episodes: EpisodeResponseDto[];
+}
+
+/** Playback manifest returned by `GET /api/v1/videos/:id/playback`. */
+export interface VideoPlaybackDto {
+  videoId: string;
+  status: VideoProcessingStatus | string;
+  posterUrl?: string;
+  manifestUrl?: string;
+  error?: string;
+}
+
+/** Response payload returned by `POST /api/v1/admin/uploads`. */
+export interface AdminUploadResponseDto {
+  videoId: string;
+  /** Storage key the file was written to. */
+  key: string;
+  /** Public URL the media controller will serve. */
+  url: string;
+  mimeType: string;
+  size: number;
+  /** Duration in seconds probed from the upload (0 for non-MP4). */
+  durationSeconds: number;
+  width: number;
+  height: number;
+  processingStatus: VideoProcessingStatus | string;
+  /** Episode the uploaded video was attached to, if any. */
+  episode?: {
+    id: string;
+    title: string;
+    seriesId: string;
+  };
+}
+
+/** Comment payload for the comment drawer / feed. */
+export interface Comment {
+  id: string;
+  user: string;
+  handle: string;
+  avatar: string;
+  /** Human-readable relative time. */
+  time: string;
+  text: string;
+  likes: number;
+}
+
+
+
+/** One playable cut of an episode. The mobile/desktop pair lets the
+ *  player pick the right aspect ratio for the device. */
+export interface Episode {
+  id: string;
+  /** Episode number within its season (1-indexed). */
+  episodeNumber: number;
+  title: string;
+  description: string;
+  /** Human-readable duration in HH:MM:SS form (mock consumers split on
+   *  ":" for the fallback readout). */
+  duration: string;
+  video: {
+    mobile: VideoCut;
+    desktop: VideoCut;
+  };
+  videoId?: string;
+  processingStatus?: VideoProcessingStatus;
+  creatorNotes: string;
+  synopsis: string;
+  likes: number;
+  commentsCount: number;
+  status: EpisodeStatus;
+}
+
+/** Show / series metadata. */
+export interface Series {
+  id: string;
+  title: string;
+  slug: string;
+  /** Creator display name. */
+  creator: string;
+  coverImage: string;
+  /** Shorter marketing copy. */
+  tagline: string;
+  /** Genre tags — used for chips + search filtering. */
+  genre: string[];
+  /** Tailwind colour index for theming accents (optional, default 0). */
+  accent: number;
+  status: SeriesStatus;
+  /** Total number of episodes in the series. */
+  totalEpisodes: number;
+  /** Episodes in playback order. */
+  episodes: Episode[];
+}
+
+/** A single reel feed entry — pair of series + episode + position. */
+export interface ReelItem {
+  series: Series;
+  episode: Episode;
+  episodeIndex: number;
+}
