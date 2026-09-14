@@ -5,6 +5,7 @@
   "description": "NestJS REST API. Node 24.19.",
   "scripts": {
     "dev": "nest start --watch",
+    "prebuild": "pnpm --filter @epireels/types run build",
     "build": "nest build",
     "start": "nest start",
     "start:prod": "nest start --prod",

@@ -1,9 +1,9 @@
 /**
  * EpiReels — reels API adapter.
  *
- * Maps the slimmer Nest `EpisodeResponseDto` / `SeriesResponseDto`
- * payloads into the richer `Episode` / `Series` / `ReelItem` shapes the
- * React components consume.
+ * Maps the wire `EpisodeResponseDto` / `SeriesResponseDto` payloads
+ * (defined in `@epireels/types`) into the richer `Episode` / `Series` /
+ * `ReelItem` shapes the React components consume.
  *
  * Until the backend exposes likes, comments, creator, cover image, etc.
  * directly, the adapter fills those slots with safe defaults (zeros,
@@ -11,69 +11,47 @@
  * even before those endpoints ship.
  */
 
-import { apiFetch, ApiError } from "./client";
 import type {
   Comment,
-  Episode,
-  EpisodeStatus,
-  ReelItem,
-  Series,
+  EpisodeResponseDto,
+  SeriesResponseDto,
   VideoCut,
-} from "@/lib/types";
+  VideoPlaybackDto,
+  VideoProcessingStatus,
+  Episode,
+  ReelItem,
+  Series
+} from "@epireels/types";
+import { apiFetch } from "./client";
 
-// ── Wire-format DTOs ──────────────────────────────────────────────
+// ── Re-exports so existing call sites can keep importing from here. ──
 
-export interface EpisodeMediaDto {
-  id?: string;
-  url: string;
-  type: string;
-  processingStatus?: "UPLOADED" | "PROCESSING" | "READY" | "FAILED";
-}
-
-export interface VideoPlaybackDto {
-  videoId: string;
-  status: "UPLOADED" | "PROCESSING" | "READY" | "FAILED";
-  posterUrl?: string;
-  manifestUrl?: string;
-  error?: string;
-}
-
-export interface EpisodeResponseDto {
-  id: string;
-  title: string;
-  number: number;
-  /** Duration in seconds. */
-  duration?: number;
-  status: EpisodeStatus;
-  video: EpisodeMediaDto | null;
-  thumbnailUrl: string | null;
-  /** Synopsis / description. Optional in the wire format. */
-  synopsis?: string | null;
-  /** Like count. Optional. */
-  likes?: number;
-  /** Comment count. Optional. */
-  commentsCount?: number;
-}
-
-export interface SeriesResponseDto {
-  id: string;
-  title: string;
-  slug?: string;
-  creator?: string;
-  coverImage?: string | null;
-  tagline?: string;
-  genre?: string[];
-  accent?: number;
-  status?: "draft" | "published" | "archived";
-  totalEpisodes?: number;
-  episodes?: EpisodeResponseDto[];
-}
+export type { EpisodeResponseDto, SeriesResponseDto, VideoPlaybackDto };
 
 // ── Defaults used until the API exposes the richer fields ────────
 
 const DEFAULT_THUMBNAIL =
   "https://picsum.photos/seed/epireels-default/720/405";
 const DEFAULT_AVATAR = "https://picsum.photos/seed/epireels-creator/200/200";
+
+const KNOWN_PROCESSING_STATUSES = [
+  "UPLOADED",
+  "PROCESSING",
+  "READY",
+  "FAILED",
+] as const satisfies readonly VideoProcessingStatus[];
+
+/** Narrow an unknown wire status string to the
+ *  `VideoProcessingStatus` union, returning `undefined` for anything we
+ *  don't recognise (e.g. an older client talking to a newer API). */
+function asProcessingStatus(
+  raw: string | undefined,
+): VideoProcessingStatus | undefined {
+  if (!raw) return undefined;
+  return (KNOWN_PROCESSING_STATUSES as readonly string[]).includes(raw)
+    ? (raw as VideoProcessingStatus)
+    : undefined;
+}
 
 /** Format seconds → "HH:MM:SS" (or "MM:SS" when under an hour). */
 export function formatDuration(totalSeconds?: number): string {
@@ -124,7 +102,7 @@ export function mapEpisode(dto: EpisodeResponseDto): Episode {
     duration: formatDuration(dto.duration),
     video: { mobile, desktop },
     videoId: dto.video?.id,
-    processingStatus: dto.video?.processingStatus,
+    processingStatus: asProcessingStatus(dto.video?.processingStatus),
     creatorNotes: "",
     synopsis: dto.synopsis ?? "",
     likes: dto.likes ?? 0,

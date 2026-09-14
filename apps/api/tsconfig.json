@@ -12,6 +12,7 @@
     "sourceMap": true,
     "outDir": "./dist",
     "rootDir": "./src",
+    "baseUrl": ".",
     "paths": {
       "@epireels/types": ["../../packages/types/dist/index.d.ts"],
       "@epireels/types/*": ["../../packages/types/dist/*"]
@@ -25,6 +26,14 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "test", "**/*.spec.ts"]
+  "include": ["src/**/*.ts"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "test",
+    "**/*.spec.ts",
+    "../../apps/web",
+    "../../apps/mobile",
+    "../../packages"
+  ]
 }

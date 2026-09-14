@@ -1,28 +1,15 @@
-import {
-  EpisodeResponseDto,
-  EpisodeStatus,
-} from '../../episodes/dto/episode-response.dto';
-
-export type SeriesStatus = 'draft' | 'published' | 'archived';
-
-/** Lightweight summary used by `GET /api/v1/series` (no episodes). */
-export class SeriesSummaryDto {
-  id!: string;
-  title!: string;
-  slug!: string;
-  creator!: string;
-  coverImage!: string | null;
-  tagline!: string;
-  genre!: string[];
-  accent!: number;
-  status!: SeriesStatus;
-  totalEpisodes!: number;
-}
-
-/** Full series payload returned by `GET /api/v1/series/:id`. */
-export class SeriesResponseDto extends SeriesSummaryDto {
-  episodes!: EpisodeResponseDto[];
-}
-
-/** Re-export for backwards compatibility. */
-export type { EpisodeStatus };
+/**
+ * Series DTOs — re-exported from the shared `@epireels/types` package so
+ * the API controllers, services, the front-end adapter, and the React
+ * components all see the same wire shape.
+ *
+ * The historical module-local `class` definitions were removed; consumers
+ * should import the `SeriesResponseDto` / `SeriesSummaryDto` /
+ * `SeriesStatus` symbols from `@epireels/types` (or from this module,
+ * which just re-exports them).
+ */
+export type {
+  SeriesResponseDto,
+  SeriesSummaryDto,
+  SeriesStatus,
+} from '@epireels/types';

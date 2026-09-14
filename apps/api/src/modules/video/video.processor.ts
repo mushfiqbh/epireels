@@ -3,12 +3,7 @@ import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { promisify } from 'util';
-import {
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { STORAGE_SERVICE, StorageService } from '../storage/storage.interface';
 import { ProbeResult, VIDEO_PROCESSING_STATUS } from './video.types';
@@ -324,9 +319,7 @@ export class VideoProcessor {
         processingStatus: VIDEO_PROCESSING_STATUS.READY,
         streamPath: payload.streamPath,
         thumbnailPath: payload.thumbnailPath,
-        processingError: payload.posterWritten
-          ? null
-          : 'Poster unavailable.',
+        processingError: payload.posterWritten ? null : 'Poster unavailable.',
       },
     });
   }
@@ -441,12 +434,7 @@ function resolveBinary(
       `C:\\Program Files\\ffmpeg\\bin\\${name}.exe`,
       `C:\\Program Files (x86)\\ffmpeg\\bin\\${name}.exe`,
       `C:\\ProgramData\\chocolatey\\bin\\${name}.exe`,
-      path.join(
-        process.env.USERPROFILE ?? '',
-        'scoop',
-        'shims',
-        `${name}.exe`,
-      ),
+      path.join(process.env.USERPROFILE ?? '', 'scoop', 'shims', `${name}.exe`),
     ];
     for (const candidate of candidates) {
       if (candidate && safeExists(candidate)) return candidate;
@@ -476,4 +464,3 @@ function safeExists(file: string): boolean {
     return false;
   }
 }
-

@@ -5,23 +5,11 @@
  * the parsed JSON payload. Errors are normalised into the project's
  * shared `ApiError` so callers can render consistent error UI.
  */
+import type { AdminUploadResponseDto } from "@epireels/types";
 import { apiUrl, ApiError } from "./client";
 
-export interface AdminUploadEpisode {
-  id: string;
-  title: string;
-  seriesId: string;
-}
-
-export interface AdminUploadResponse {
-  videoId: string;
-  key: string;
-  url: string;
-  mimeType: string;
-  size: number;
-  processingStatus: "UPLOADED" | "PROCESSING" | "READY" | "FAILED";
-  episode?: AdminUploadEpisode;
-}
+/** Re-export of the shared admin-upload response. */
+export type AdminUploadResponse = AdminUploadResponseDto;
 
 export interface UploadVideoInput {
   file: File;
@@ -38,7 +26,7 @@ export interface UploadVideoInput {
  */
 export async function uploadVideo(
   input: UploadVideoInput,
-): Promise<AdminUploadResponse> {
+): Promise<AdminUploadResponseDto> {
   const form = new FormData();
   form.append("file", input.file);
   if (input.episodeTitle) form.append("episodeTitle", input.episodeTitle);

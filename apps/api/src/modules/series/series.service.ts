@@ -162,9 +162,7 @@ export class SeriesService {
     }
 
     const episodes = row.seasons.flatMap((season) =>
-      season.episodes.map((episode) =>
-        this.toEpisodeDto(episode, row.status),
-      ),
+      season.episodes.map((episode) => this.toEpisodeDto(episode, row.status)),
     );
 
     return {

@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { HealthSnapshot } from '@epireels/types';
 
 @Injectable()
 export class AppService {
@@ -7,12 +8,14 @@ export class AppService {
   }
 
   /** Lightweight health snapshot used by uptime monitors and Render. */
-  getHealth() {
+  getHealth(): HealthSnapshot {
     return {
-      status: 'ok' as const,
+      status: 'ok',
       uptimeSeconds: Math.round(process.uptime()),
-      timestamp: new Date().toISOString(),
-      nodeEnv: process.env.NODE_ENV ?? 'development',
+      timestamp: new Date().toISOString() as HealthSnapshot['timestamp'],
+      nodeEnv:
+        (process.env.NODE_ENV as HealthSnapshot['nodeEnv'] | undefined) ??
+        'development',
       storageDriver: process.env.STORAGE_DRIVER ?? 'local',
     };
   }

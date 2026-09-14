@@ -1,4 +1,5 @@
 import { Controller, Get } from '@nestjs/common';
+import type { HealthSnapshot } from '@epireels/types';
 import { AppService } from './app.service';
 
 @Controller('api/v1')
@@ -12,7 +13,7 @@ export class AppController {
 
   /** `GET /api/v1/health` — liveness/readiness probe for Render and uptime checks. */
   @Get('health')
-  health() {
+  health(): HealthSnapshot {
     return this.appService.getHealth();
   }
 }

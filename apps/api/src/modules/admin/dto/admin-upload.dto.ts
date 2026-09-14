@@ -1,39 +1,10 @@
 /**
- * DTOs returned by the admin upload endpoint.
+ * DTOs returned by the admin upload endpoint — re-exported from the
+ * shared `@epireels/types` package so the admin form, the API
+ * controllers, and the React components all agree on the wire shape.
  *
- * Intentionally tiny — the wire payload only needs the public URL of
- * the freshly persisted video, the storage key (so the caller can
- * display it for debugging), and the episode that was created or
- * attached when one was requested.
+ * The historical module-local `interface` definition was removed;
+ * consumers should import `AdminUploadResponseDto` from `@epireels/types`
+ * (or from this module, which just re-exports it).
  */
-export interface AdminUploadResponseDto {
-  /** Persisted Video id used by the playback endpoint. */
-  videoId: string;
-  /** Storage key the file was written to (relative to STORAGE_LOCAL_PATH). */
-  key: string;
-  /** Public URL the media controller will serve, e.g. `/media/uploads/...`. */
-  url: string;
-  /** Mime type derived from the upload's file extension. */
-  mimeType: string;
-  /** Bytes written. Useful for the admin UI to confirm the upload size. */
-  size: number;
-  /**
-   * Duration in seconds probed from the MP4 `mvhd` box. Zero for
-   * containers the server-side probe doesn't understand (`.webm`,
-   * `.mkv`) — the client will still recover the real value from
-   * `<video>.loadedmetadata`.
-   */
-  durationSeconds: number;
-  /** Intrinsic width in pixels (`tkhd` 16.16 fixed point, lower 16 bits). */
-  width: number;
-  /** Intrinsic height in pixels. */
-  height: number;
-  /** Current asynchronous processing state. */
-  processingStatus: string;
-  /** Episode the uploaded video was attached to, if any. */
-  episode?: {
-    id: string;
-    title: string;
-    seriesId: string;
-  };
-}
+export type { AdminUploadResponseDto } from '@epireels/types';

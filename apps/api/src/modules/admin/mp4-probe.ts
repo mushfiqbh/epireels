@@ -146,7 +146,8 @@ function readMvhdDuration(buffer: Buffer, box: BoxSpan): number {
   const durationOffset = timescaleOffset + 4;
   if (durationOffset + (version === 1 ? 8 : 4) > box.end) return 0;
 
-  const timescale = buffer.readUInt32BE(timescaleOffset) || MP4_TIMESCALE_FALLBACK;
+  const timescale =
+    buffer.readUInt32BE(timescaleOffset) || MP4_TIMESCALE_FALLBACK;
   const duration =
     version === 1
       ? Number(buffer.readBigUInt64BE(durationOffset))
