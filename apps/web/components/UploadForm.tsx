@@ -1,7 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { uploadVideo, type AdminUploadResponse } from "@/lib/api/upload";
+import {
+  uploadAdminVideo,
+  uploadVideo,
+  type AdminUploadResponse,
+} from "@/lib/api/upload";
 import { ApiError } from "@/lib/api/client";
 
 interface SeriesOption {
@@ -9,8 +13,12 @@ interface SeriesOption {
   title: string;
 }
 
-interface AdminUploadFormProps {
+interface UploadFormProps {
   series: SeriesOption[];
+  /** "admin" posts to /api/v1/admin/uploads (role-gated server-side);
+   *  "member" posts to /api/v1/uploads and assigns ownership to the
+   *  caller's account. */
+  mode: "admin" | "member";
 }
 
 type Status =
@@ -32,7 +40,7 @@ function formatBytes(bytes: number): string {
   }`;
 }
 
-export default function AdminUploadForm({ series }: AdminUploadFormProps) {
+export default function UploadForm({ series }: UploadFormProps) {
   const [file, setFile] = useState<File | null>(null);
   const [episodeTitle, setEpisodeTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -74,8 +82,6 @@ export default function AdminUploadForm({ series }: AdminUploadFormProps) {
             : undefined,
       });
       setStatus({ kind: "success", response });
-      // Reset the volatile bits but keep the series selection so the
-      // user can rapidly upload a batch of episodes to the same show.
       setFile(null);
       setEpisodeTitle("");
       setDescription("");
@@ -296,9 +302,6 @@ function RadioRow({
 }
 
 function ResultPreview({ response }: { response: AdminUploadResponse }) {
-  // The response.url is server-relative (e.g. `/media/uploads/...`).
-  // For a clickable preview we hand the user the path — the running
-  // server will serve it on the API origin.
   return (
     <div className="rounded-md border border-white/10 bg-ink/60 px-4 py-3 text-xs text-white/70">
       <div>

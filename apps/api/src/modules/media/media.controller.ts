@@ -12,6 +12,7 @@ import {
 import type { Request, Response } from 'express';
 import type { StorageService } from '../storage/storage.interface';
 import { STORAGE_SERVICE } from '../storage/storage.interface';
+import { Public } from '../../common/decorators/public.decorator';
 
 /**
  * Build the value for the `Access-Control-Allow-Origin` response header.
@@ -154,6 +155,13 @@ function safeKeyFromPath(rawPath: string | string[]): string {
   return joined.replace(/^\/+/, '');
 }
 
+/**
+ * Media streaming must remain reachable for anonymous viewers — the
+ * `<video>` element on the public feed fetches `/media/*` without any
+ * session cookies. The global `JwtAuthGuard` would otherwise reject
+ * those requests with a 401 before they ever hit this controller.
+ */
+@Public()
 @Controller('media')
 export class MediaController {
   constructor(

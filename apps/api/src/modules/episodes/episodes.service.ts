@@ -37,6 +37,9 @@ export class EpisodesService {
         videos: {
           orderBy: { createdAt: 'asc' },
         },
+        _count: {
+          select: { comments: true },
+        },
       },
     });
 
@@ -66,6 +69,7 @@ export class EpisodesService {
       status: normaliseStatus(episode.season.series.status),
       video,
       thumbnailUrl,
+      commentsCount: episode._count.comments,
     };
   }
 }

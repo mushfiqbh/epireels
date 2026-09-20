@@ -294,10 +294,12 @@ export class VideoProcessor {
     status: string,
     error: string | null,
   ): Promise<void> {
-    await this.prisma.video.update({
-      where: { id: videoId },
-      data: { processingStatus: status, processingError: error },
-    });
+    await this.prisma.video
+      .update({
+        where: { id: videoId },
+        data: { processingStatus: status, processingError: error },
+      })
+      .catch(() => undefined);
   }
 
   /**

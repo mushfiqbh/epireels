@@ -1,14 +1,13 @@
 /**
- * Front-end upload helper for the admin route.
+ * Front-end upload helper.
  *
- * Posts a multipart form to `POST /api/v1/admin/uploads` and returns
- * the parsed JSON payload. Errors are normalised into the project's
- * shared `ApiError` so callers can render consistent error UI.
+ * Uploads to the member endpoint `POST /api/v1/uploads` which requires
+ * authentication and assigns ownership to the caller.
  */
 import type { AdminUploadResponseDto } from "@epireels/types";
-import { apiUrl, ApiError } from "./client";
+import { apiFetch, ApiError } from "./client";
 
-/** Re-export of the shared admin-upload response. */
+/** Re-export of the shared upload response. */
 export type AdminUploadResponse = AdminUploadResponseDto;
 
 export interface UploadVideoInput {
@@ -22,7 +21,7 @@ export interface UploadVideoInput {
 }
 
 /**
- * Upload `file` to the admin endpoint. Throws `ApiError` on non-2xx.
+ * Upload `file` to the member endpoint. Throws `ApiError` on non-2xx.
  */
 export async function uploadVideo(
   input: UploadVideoInput,
@@ -40,38 +39,20 @@ export async function uploadVideo(
     form.append("episodeNumber", String(input.episodeNumber));
   }
 
-  const url = apiUrl("/api/v1/admin/uploads");
-  let res: Response;
   try {
-    res = await fetch(url, {
+    return await apiFetch<AdminUploadResponseDto>("/api/v1/uploads", {
       method: "POST",
       body: form,
       // Important: do NOT set Content-Type. The browser will add the
       // multipart boundary itself.
     });
-  } catch (cause) {
+  } catch (err) {
+    if (err instanceof ApiError) throw err;
     throw new ApiError(
-      `Network error uploading to ${url}`,
+      `Upload failed: ${err instanceof Error ? err.message : "unknown error"}`,
       0,
-      url,
-      cause,
+      "/api/v1/uploads",
+      err,
     );
   }
-
-  if (!res.ok) {
-    let body: unknown;
-    try {
-      body = await res.json();
-    } catch {
-      body = await res.text().catch(() => undefined);
-    }
-    throw new ApiError(
-      `Upload failed: ${res.status} ${res.statusText}`,
-      res.status,
-      url,
-      body,
-    );
-  }
-
-  return (await res.json()) as AdminUploadResponse;
 }

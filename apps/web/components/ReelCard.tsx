@@ -6,7 +6,7 @@ import { Play } from "lucide-react";
 import VideoPlayer, { type VideoHandle } from "@/components/VideoPlayer";
 import OverlayControls from "@/components/OverlayControls";
 import ActionRail from "@/components/ActionRail";
-import type { ReelItem, Series } from "@/lib/types";
+import type { ReelItem } from "@/lib/types";
 
 interface ReelCardProps {
   item: ReelItem;
@@ -20,8 +20,9 @@ interface ReelCardProps {
   canGoNext: boolean;
   /** Desktop cinematic reel renders the 16:9 landscape cut. */
   landscape?: boolean;
-  /** When true, hide the playlist button (series-mode feed). */
-  seriesMode: boolean;
+  /** When true, auto-play will load the next episode from the current series. */
+  seriesAutoplayEnabled: boolean;
+  onToggleSeriesAutoplay: (enabled: boolean) => void;
   onGoPrev: () => void;
   onGoNext: () => void;
   onToggleMute: () => void;
@@ -29,7 +30,6 @@ interface ReelCardProps {
   onToggleSave: () => void;
   onOpenComments: () => void;
   onShare: () => void;
-  onSelectEpisode: (series: Series, episodeIndex: number) => void;
   /** Render the action rail (like / comments / save / share) inside the video frame. */
   showActionRail?: boolean;
   /** Desktop only — true while theatre mode is active (stage spans the tab). */
@@ -61,7 +61,8 @@ export default function ReelCard({
   canGoPrev,
   canGoNext,
   landscape = false,
-  seriesMode,
+  seriesAutoplayEnabled,
+  onToggleSeriesAutoplay,
   onGoPrev,
   onGoNext,
   onToggleMute,
@@ -69,7 +70,6 @@ export default function ReelCard({
   onToggleSave,
   onOpenComments,
   onShare,
-  onSelectEpisode,
   showActionRail = true,
   theatre = false,
   onToggleTheatre,
@@ -132,8 +132,8 @@ export default function ReelCard({
         <OverlayControls
           item={item}
           controlsVisible={controlsVisible}
-          seriesMode={seriesMode}
-          onSelectEpisode={onSelectEpisode}
+          seriesAutoplayEnabled={seriesAutoplayEnabled}
+          onToggleSeriesAutoplay={onToggleSeriesAutoplay}
         />
       )}
 

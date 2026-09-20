@@ -91,6 +91,9 @@ export class SeriesService {
         mimeType: string;
         processingStatus: string;
       }[];
+      _count?: {
+        comments: number;
+      };
     },
     parentStatus: string,
   ): EpisodeResponseDto {
@@ -118,7 +121,7 @@ export class SeriesService {
       thumbnailUrl,
       synopsis: episode.description ?? '',
       likes: 0,
-      commentsCount: 0,
+      commentsCount: episode._count?.comments ?? 0,
     };
   }
 
@@ -150,6 +153,9 @@ export class SeriesService {
               orderBy: { episodeNumber: 'asc' },
               include: {
                 videos: { orderBy: { createdAt: 'asc' } },
+                _count: {
+                  select: { comments: true },
+                },
               },
             },
           },

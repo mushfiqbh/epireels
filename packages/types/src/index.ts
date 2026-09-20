@@ -68,7 +68,7 @@ export interface User {
   id: ID;
   email: string;
   displayName: string;
-  avatarUrl?: string;
+  avatarUrl?: string | null;
   role: UserRole;
   createdAt: ISODateString;
 }
@@ -76,7 +76,10 @@ export interface User {
 export type UserRole = "admin" | "member" | "guest";
 
 export interface PublicUser
-  extends Pick<User, "id" | "displayName" | "avatarUrl"> {}
+  extends Pick<User, "id" | "displayName"> {
+  email?: string;
+  avatarUrl?: string | null;
+}
 
 // ─── Auth ──────────────────────────────────────────────────────────────────
 
@@ -87,13 +90,51 @@ export interface AuthSession {
   expiresAt: ISODateString;
 }
 
+/**
+ * Returned by `GET /api/v1/auth/me` and `POST /api/v1/auth/refresh`.
+ *
+ * The access JWT itself is delivered via the `aep_at` HttpOnly cookie; this
+ * payload describes the current session for the React client. `csrfToken`
+ * is a separate value the client must echo back as `X-CSRF-Token` on every
+ * non-GET request (double-submit cookie pattern).
+ */
+export interface AuthBootstrap {
+  user: PublicUser & { role: UserRole };
+  csrfToken: string;
+}
+
+/** Status reported by `useAuth()` on the web side. */
+export type AuthStatus = "loading" | "anonymous" | "authenticated";
+
 export interface LoginInput {
   email: string;
   password: string;
 }
 
 export interface SignupInput extends LoginInput {
+  username: string;
   displayName: string;
+}
+
+/** Body posted to `POST /api/v1/likes` (toggle) and `POST /api/v1/saves`. */
+export interface EngagementToggleInput {
+  episodeId: string;
+}
+
+/** Body posted to `POST /api/v1/comments`. */
+export interface CommentCreateInput {
+  episodeId: string;
+  body: string;
+}
+
+export interface CommentDto {
+  id: ID;
+  episodeId: ID;
+  author: PublicUser;
+  body: string;
+  createdAt: ISODateString;
+  likes: number;
+  likedByCurrentUser?: boolean;
 }
 
 // ─── Health (used by uptime probes & the web "system status" page) ────────

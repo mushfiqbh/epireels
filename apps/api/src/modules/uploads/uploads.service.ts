@@ -7,65 +7,34 @@ import {
 import { randomUUID } from 'crypto';
 import * as path from 'path';
 import { PrismaService } from '../../prisma/prisma.service';
-import { STORAGE_SERVICE } from '../storage/storage.interface';
-import type { StorageService } from '../storage/storage.interface';
+import {
+  STORAGE_SERVICE,
+  type StorageService,
+} from '../storage/storage.interface';
 import { VideoProcessor } from '../video/video.processor';
-import type { AdminUploadResponseDto } from './dto/admin-upload.dto';
 import { probeMp4 } from './mp4-probe';
+import type { MulterFile, AdminUploadResponseDto } from './dto/upload.dto';
 
 /**
- * Minimal subset of multer's file shape that we rely on. Defined
- * locally so this module compiles even when the express types are not
- * imported transitively.
- */
-export interface MulterFile {
-  fieldname: string;
-  originalname: string;
-  encoding: string;
-  mimetype: string;
-  size: number;
-  buffer: Buffer;
-}
-
-/**
- * Admin upload service.
+ * Member upload service.
  *
- * Persists the uploaded video to the configured {@link StorageService}
- * and — when the request includes enough metadata — links it to a
- * Season → Episode → Video row chain so it appears in the public feed.
- *
- * **No auth.** This service is intentionally open for the duration of
- * the prototype. Disable it in production by setting
- * `ADMIN_UPLOAD_ENABLED=false` (or `NODE_ENV=production` together with
- * `ADMIN_ALLOW_PROD=false`).
+ * Same flow as the legacy admin upload, but every upload is owned by
+ * the authenticated caller. The resulting `Upload` row acts as the
+ * ownership ledger — `DELETE /api/v1/uploads/:uploadId` only succeeds
+ * when the caller is the `ownerId`.
  */
 @Injectable()
-export class AdminService {
-  private readonly logger = new Logger(AdminService.name);
+export class UploadsService {
+  private readonly logger = new Logger(UploadsService.name);
 
   constructor(
     private readonly prisma: PrismaService,
-    @Inject(STORAGE_SERVICE)
-    private readonly storage: StorageService,
+    @Inject(STORAGE_SERVICE) private readonly storage: StorageService,
     private readonly videoProcessor: VideoProcessor,
   ) {}
 
-  /**
-   * Upload a single video file and optionally attach it to a season.
-   *
-   * @param file            Multipart file uploaded under the `file` field.
-   * @param seriesId        Existing Series cuid to attach the episode to.
-   *                        If omitted, a new Series is created from
-   *                        `seriesTitle`.
-   * @param seriesTitle     Title used when creating a new Series (also
-   *                        becomes the season title).
-   * @param episodeTitle    Title for the new Episode row.
-   * @param description     Optional synopsis / show notes.
-   * @param seasonNumber    Season number (defaults to 1).
-   * @param episodeNumber   Episode number within the season (defaults
-   *                        to one greater than the current max).
-   */
   async uploadVideo(params: {
+    ownerId: string;
     file: MulterFile | undefined;
     seriesId?: string;
     seriesTitle?: string;
@@ -77,7 +46,6 @@ export class AdminService {
     if (!params.file) {
       throw new BadRequestException('A `file` multipart field is required.');
     }
-
     if (!params.episodeTitle) {
       throw new BadRequestException(
         '`episodeTitle` is required for video processing uploads.',
@@ -90,21 +58,11 @@ export class AdminService {
 
     await this.storage.upload(params.file.buffer, key, params.file.mimetype);
     const url = this.storage.getUrl(key);
-    this.logger.log(`Uploaded ${params.file.size} bytes → ${key}`);
+    this.logger.log(
+      `Owner ${params.ownerId} uploaded ${params.file.size} bytes → ${key}`,
+    );
 
-    // Best-effort probe of the upload's duration / resolution. The
-    // container MP4 boxes carry this information in plain text, so we
-    // can pull it out without spawning `ffprobe` and without adding a
-    // native dep to the container. For non-MP4 files (`.webm`, `.mkv`)
-    // this returns zeros and the row keeps the Prisma defaults — the
-    // `<video>` element will still discover the real duration via
-    // `loadedmetadata` once the bytes reach the browser.
     const probed = probeMp4(params.file.buffer);
-    if (probed.durationSeconds > 0 || probed.width > 0) {
-      this.logger.log(
-        `Probed ${key}: ${probed.durationSeconds}s @ ${probed.width}x${probed.height}`,
-      );
-    }
 
     const response: AdminUploadResponseDto = {
       key,
@@ -119,13 +77,14 @@ export class AdminService {
     };
 
     try {
-      const episode = await this.attachEpisode({
+      const { episode, seriesId: resultingSeriesId } = await this.persistUpload({
+        ownerId: params.ownerId,
         videoId,
         seriesId: params.seriesId,
         seriesTitle: params.seriesTitle,
-        seasonNumber: params.seasonNumber,
         episodeTitle: params.episodeTitle,
         description: params.description,
+        seasonNumber: params.seasonNumber,
         episodeNumber: params.episodeNumber,
         filePath: key,
         mimeType: response.mimeType,
@@ -137,7 +96,7 @@ export class AdminService {
       response.episode = {
         id: episode.id,
         title: episode.title,
-        seriesId: episode.season.seriesId,
+        seriesId: resultingSeriesId,
       };
     } catch (error) {
       await this.storage.delete(key);
@@ -149,9 +108,38 @@ export class AdminService {
     return response;
   }
 
-  /** Ensure Series + Season exist and create an Episode + Video row
-   *  pointing at the freshly uploaded file. */
-  private async attachEpisode(input: {
+  /** List uploads owned by the caller (most recent first). */
+  async listForOwner(ownerId: string, limit = 50) {
+    return this.prisma.upload.findMany({
+      where: { ownerId },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      include: { videos: true },
+    });
+  }
+
+  /** Remove an upload, but only if the caller owns it. */
+  async removeOwned(uploadId: string, ownerId: string, role?: string): Promise<void> {
+    const row = await this.prisma.upload.findUnique({
+      where: { id: uploadId },
+      include: { videos: true },
+    });
+    if (!row) {
+      throw new BadRequestException('Upload not found');
+    }
+    if (row.ownerId !== ownerId && role !== 'admin') {
+      throw new BadRequestException('You do not own this upload');
+    }
+    // Best-effort: drop the underlying files from storage, then the row.
+    for (const video of row.videos) {
+      await this.storage.delete(video.filePath).catch(() => undefined);
+    }
+    await this.prisma.upload.delete({ where: { id: uploadId } });
+  }
+
+  /** Persist an `Upload` row + Episode/Video chain attached to the owner. */
+  private async persistUpload(input: {
+    ownerId: string;
     videoId: string;
     seriesId?: string;
     seriesTitle?: string;
@@ -167,17 +155,13 @@ export class AdminService {
     height?: number;
   }) {
     let seriesId = input.seriesId;
-
     if (!seriesId) {
       if (!input.seriesTitle) {
         throw new BadRequestException(
-          'Either `seriesId` or `seriesTitle` is required when ' +
-            'uploading with an episode title.',
+          'Either `seriesId` or `seriesTitle` is required when uploading with an episode title.',
         );
       }
       const slug = slugify(input.seriesTitle);
-      // Upsert by slug so repeated uploads don't double-create the
-      // same series.
       const series = await this.prisma.series.upsert({
         where: { slug },
         create: {
@@ -196,15 +180,10 @@ export class AdminService {
     const seasonNumber = input.seasonNumber ?? 1;
     const season = await this.prisma.season.upsert({
       where: { seriesId_seasonNumber: { seriesId, seasonNumber } },
-      create: {
-        seriesId,
-        seasonNumber,
-        title: `Season ${seasonNumber}`,
-      },
+      create: { seriesId, seasonNumber, title: `Season ${seasonNumber}` },
       update: {},
     });
 
-    // Pick the next episode number if the caller didn't override it.
     let episodeNumber = input.episodeNumber;
     if (episodeNumber === undefined) {
       const last = await this.prisma.episode.findFirst({
@@ -215,12 +194,16 @@ export class AdminService {
       episodeNumber = (last?.episodeNumber ?? 0) + 1;
     }
 
-    // Mirror the probed duration + dimensions onto the Episode row too:
-    // the public Episode DTO formatter reads `Episode.durationSeconds`
-    // (not the Video row), so without this the client still gets
-    // "00:00" for newly-uploaded reels even after the Video row knows
-    // the real length.
     const durationSeconds = input.durationSeconds ?? 0;
+
+    const upload = await this.prisma.upload.create({
+      data: {
+        ownerId: input.ownerId,
+        title: input.episodeTitle,
+        description: input.description ?? null,
+        status: 'UPLOADED',
+      },
+    });
 
     const episode = await this.prisma.episode.create({
       data: {
@@ -232,6 +215,7 @@ export class AdminService {
         videos: {
           create: {
             id: input.videoId,
+            uploadId: upload.id,
             filePath: input.filePath,
             mimeType: input.mimeType,
             fileSize: BigInt(input.fileSize),
@@ -241,10 +225,9 @@ export class AdminService {
           },
         },
       },
-      include: { season: true },
     });
 
-    return episode;
+    return { upload, episode, seriesId };
   }
 }
 

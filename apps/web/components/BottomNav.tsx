@@ -1,8 +1,9 @@
 "use client";
 
-import { Heart, Home, ListVideo, User } from "lucide-react";
+import Link from "next/link";
+import { Heart, Home, ListVideo, Plus, User } from "lucide-react";
 
-export type BottomTab = "foryou" | "series" | "favourites" | "account";
+export type BottomTab = "foryou" | "series" | "studio" | "favourites" | "account";
 
 interface BottomNavProps {
   active: BottomTab;
@@ -12,9 +13,10 @@ interface BottomNavProps {
 /**
  * Bottom navigation shared across mobile and desktop.
  *
- * Four destinations, every tab uses a stacked icon-over-label layout:
+ * Four destinations plus a center creator button, every tab uses a stacked icon-over-label layout:
  * - For You     → discovery feed of Episode 1 pilots
  * - Series      → sequential episode playback of the active show
+ * - Create      → center button for studio/creator (links to /studio)
  * - Favourites  → liked/saved reel rails (placeholder surface; the
  *                 parent can wire it to a sheet/drawer later)
  * - Account     → profile / settings sheet
@@ -40,49 +42,54 @@ export default function BottomNav({ active, onChange }: BottomNavProps) {
       aria-label="Primary"
       className="flex shrink-0 items-stretch justify-around gap-1 border-t border-white/10 bg-black/85 px-2 pb-[env(safe-area-inset-bottom)] pt-1 backdrop-blur-xl md:justify-center md:gap-3 md:border-t-0 md:bg-transparent md:px-6 md:py-3 md:backdrop-blur-0"
     >
-      <button
-        type="button"
-        onClick={() => onChange("foryou")}
+      <Link
+        href="/foryou"
         className={tabClass(active === "foryou")}
         aria-label="For You"
         aria-current={active === "foryou" ? "page" : undefined}
       >
         <Home className={iconClass(active === "foryou")} strokeWidth={active === "foryou" ? 2.6 : 2} />
         <span>For You</span>
-      </button>
+      </Link>
 
-      <button
-        type="button"
-        onClick={() => onChange("series")}
+      <Link
+        href="/series"
         className={tabClass(active === "series")}
         aria-label="Series"
         aria-current={active === "series" ? "page" : undefined}
       >
         <ListVideo className={iconClass(active === "series")} strokeWidth={active === "series" ? 2.6 : 2} />
         <span>Series</span>
-      </button>
+      </Link>
 
-      <button
-        type="button"
-        onClick={() => onChange("favourites")}
+      <Link
+        href="/studio"
+        aria-label="Create"
+        className={tabClass(active === "studio")}
+      >
+        <Plus className="h-5 w-5 md:h-[18px] md:w-[18px]" strokeWidth={2.75} />
+        <span>Create</span>
+      </Link>
+
+      <Link
+        href="/favorites"
         className={tabClass(active === "favourites")}
         aria-label="Favourites"
         aria-current={active === "favourites" ? "page" : undefined}
       >
         <Heart className={iconClass(active === "favourites")} strokeWidth={active === "favourites" ? 2.6 : 2} />
         <span>Favourites</span>
-      </button>
+      </Link>
 
-      <button
-        type="button"
-        onClick={() => onChange("account")}
+      <Link
+        href="/account"
         className={tabClass(active === "account")}
         aria-label="Account"
         aria-current={active === "account" ? "page" : undefined}
       >
         <User className={iconClass(active === "account")} strokeWidth={active === "account" ? 2.6 : 2} />
         <span>Account</span>
-      </button>
+      </Link>
     </nav>
   );
 }

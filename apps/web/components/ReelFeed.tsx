@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, type RefObject } from "react";
 import ReelCard from "@/components/ReelCard";
-import type { ReelItem, Series } from "@/lib/types";
+import type { ReelItem } from "@/lib/types";
 
 interface ReelFeedProps {
   /** The scroll container — owned by the app shell so it can jump slides. */
@@ -14,8 +14,9 @@ interface ReelFeedProps {
   savedIds: Set<string>;
   /** Desktop cinematic reel renders 16:9 landscape cuts. */
   landscape?: boolean;
-  /** When true, hide the playlist button (series-mode feed). */
-  seriesMode: boolean;
+  /** When true, auto-play will load the next episode from the current series. */
+  seriesAutoplayEnabled: boolean;
+  onToggleSeriesAutoplay: (enabled: boolean) => void;
   onActiveIndexChange: (index: number) => void;
   onGoPrev: () => void;
   onGoNext: () => void;
@@ -24,7 +25,6 @@ interface ReelFeedProps {
   onToggleMute: () => void;
   onOpenComments: (episodeId: string) => void;
   onShare: (item: ReelItem) => void;
-  onSelectEpisode: (series: Series, episodeIndex: number) => void;
   /** Desktop only — true while theatre mode is active (stage spans the tab). */
   theatre?: boolean;
   /** Desktop only — toggle the cinema / theatre layout. */
@@ -51,7 +51,8 @@ export default function ReelFeed({
   likedIds,
   savedIds,
   landscape = false,
-  seriesMode,
+  seriesAutoplayEnabled,
+  onToggleSeriesAutoplay,
   onActiveIndexChange,
   onGoPrev,
   onGoNext,
@@ -60,7 +61,6 @@ export default function ReelFeed({
   onToggleMute,
   onOpenComments,
   onShare,
-  onSelectEpisode,
   theatre = false,
   onToggleTheatre,
   isFullscreen = false,
@@ -124,7 +124,8 @@ export default function ReelFeed({
           canGoPrev={index > 0}
           canGoNext={index < items.length - 1}
           landscape={landscape}
-          seriesMode={seriesMode}
+          seriesAutoplayEnabled={seriesAutoplayEnabled}
+          onToggleSeriesAutoplay={onToggleSeriesAutoplay}
           onGoPrev={onGoPrev}
           onGoNext={onGoNext}
           onToggleMute={onToggleMute}
@@ -132,7 +133,6 @@ export default function ReelFeed({
           onToggleSave={() => onToggleSave(item.episode.id)}
           onOpenComments={() => onOpenComments(item.episode.id)}
           onShare={() => onShare(item)}
-          onSelectEpisode={onSelectEpisode}
           theatre={theatre}
           onToggleTheatre={onToggleTheatre}
           isFullscreen={isFullscreen}

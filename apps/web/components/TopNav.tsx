@@ -1,7 +1,7 @@
 "use client";
 
+import Link from "next/link";
 import { Heart, Home, ListVideo, Menu, Plus, Search, User } from "lucide-react";
-import type { Series } from "@/lib/types";
 import type { BottomTab } from "@/components/BottomNav";
 
 export type FeedMode = "foryou" | "series";
@@ -9,8 +9,6 @@ export type FeedMode = "foryou" | "series";
 interface TopNavProps {
   mode: FeedMode;
   onModeChange: (mode: FeedMode) => void;
-  /** Reserved for future deep-links from the brand button. */
-  onSelectSeries?: (series: Series) => void;
   searchOpen: boolean;
   onSearchOpenChange: (open: boolean) => void;
   /** Active bottom-nav tab — rendered as pill tabs in the header on
@@ -25,9 +23,9 @@ interface TopNavProps {
  * Header chrome: brand mark + primary nav tabs + global actions.
  *
  * Layout (desktop, md+):
- *   [brand]  [For You | Series | Favourites | Account]  [search | create | menu]
+ *   [brand]  [For You | Series | Studio | Favourites | Account]  [search | menu]
  *
- * The four primary destinations that used to live in `BottomNav` are
+ * The primary destinations that used to live in `BottomNav` are
  * promoted into the header on desktop so the player can keep the full
  * viewport height. On mobile the docked `BottomNav` stays at the
  * bottom of the phone frame and these pills are not rendered (the
@@ -56,26 +54,25 @@ export default function TopNav({
   return (
     <header className="relative bg-transparent z-30 flex h-14 shrink-0 items-center justify-between gap-2 px-4">
       {/* Brand — square mark + wordmark, visible at every breakpoint. */}
-      <button
-        onClick={() => onModeChange("foryou")}
+      <Link
+        href="/foryou"
         className="flex shrink-0 items-center gap-1.5"
         aria-label="EpiReels home"
       >
         <span className="text-[14px] font-extrabold tracking-tight text-white sm:text-[15px]">
           EpiReels
         </span>
-      </button>
+      </Link>
 
       {/* Primary nav — promoted from BottomNav. Hidden on mobile (md:inline-flex)
           because the docked BottomNav remains in use there. */}
-      {onTabChange && active && (
+      {active && (
         <nav
           aria-label="Primary"
           className="hidden shrink-0 items-center gap-2 md:flex"
         >
-          <button
-            type="button"
-            onClick={() => onTabChange("foryou")}
+          <Link
+            href="/foryou"
             className={tabClass(active === "foryou")}
             aria-label="For You"
             aria-current={active === "foryou" ? "page" : undefined}
@@ -85,11 +82,10 @@ export default function TopNav({
               strokeWidth={active === "foryou" ? 2.6 : 2}
             />
             <span>For You</span>
-          </button>
+          </Link>
 
-          <button
-            type="button"
-            onClick={() => onTabChange("series")}
+          <Link
+            href="/series"
             className={tabClass(active === "series")}
             aria-label="Series"
             aria-current={active === "series" ? "page" : undefined}
@@ -99,11 +95,10 @@ export default function TopNav({
               strokeWidth={active === "series" ? 2.6 : 2}
             />
             <span>Series</span>
-          </button>
+          </Link>
 
-          <button
-            type="button"
-            onClick={() => onTabChange("favourites")}
+          <Link
+            href="/favorites"
             className={tabClass(active === "favourites")}
             aria-label="Favourites"
             aria-current={active === "favourites" ? "page" : undefined}
@@ -113,11 +108,23 @@ export default function TopNav({
               strokeWidth={active === "favourites" ? 2.6 : 2}
             />
             <span>Favourites</span>
-          </button>
+          </Link>
 
-          <button
-            type="button"
-            onClick={() => onTabChange("account")}
+          <Link
+            href="/studio"
+            className={tabClass(active === "studio")}
+            aria-label="Studio"
+            aria-current={active === "studio" ? "page" : undefined}
+          >
+            <Plus
+              className={iconClass(active === "studio")}
+              strokeWidth={active === "studio" ? 2.6 : 2}
+            />
+            <span>Studio</span>
+          </Link>
+
+          <Link
+            href="/account"
             className={tabClass(active === "account")}
             aria-label="Account"
             aria-current={active === "account" ? "page" : undefined}
@@ -127,7 +134,7 @@ export default function TopNav({
               strokeWidth={active === "account" ? 2.6 : 2}
             />
             <span>Account</span>
-          </button>
+          </Link>
         </nav>
       )}
 
@@ -135,7 +142,7 @@ export default function TopNav({
           is not rendered (mobile) — keeps brand-left / actions-right. */}
       <div className="flex-1" />
 
-      {/* Actions: search → create → menu */}
+      {/* Actions: search → menu */}
       <div className="flex shrink-0 items-center gap-1">
         <button
           onClick={() => onSearchOpenChange(true)}
@@ -144,12 +151,6 @@ export default function TopNav({
           className="flex h-9 w-9 items-center justify-center rounded-full text-white/90 transition-colors hover:bg-white/10 active:scale-95"
         >
           <Search className="h-5 w-5" />
-        </button>
-        <button
-          aria-label="Create"
-          className="flex h-9 w-9 items-center justify-center rounded-xl text-white shadow-sm transition-transform hover:brightness-110 active:scale-95"
-        >
-          <Plus className="h-5 w-5" strokeWidth={2.75} />
         </button>
         <button
           aria-label="Menu"

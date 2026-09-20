@@ -18,14 +18,39 @@ model User {
   passwordHash String   @map("password_hash")
   displayName  String?  @map("display_name")
   avatarUrl    String?  @map("avatar_url")
+  /// 'member' for normal sign-ups, 'admin' for back-office users,
+  /// 'system' reserved for the synthetic account that owns rows
+  /// pre-dating the auth migration.
+  role         String   @default("member")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
   playlists     Playlist[]
   watchHistory  WatchHistory[]
   likes         Like[]
+  refreshTokens RefreshToken[]
+  uploads       Upload[]
+  saves         Save[]
+  comments      Comment[]
 
   @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  /// sha256 of the opaque refresh token (we never store the raw value).
+  tokenHash String   @unique @map("token_hash")
+  expiresAt DateTime @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  userAgent String?  @map("user_agent")
+  ip        String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
 }
 
 // =============================================================================
@@ -78,6 +103,7 @@ model Episode {
   playlistItems PlaylistItem[]
   watchHistory  WatchHistory[]
   likes         Like[]
+  comments      Comment[]
 
   @@unique([seasonId, episodeNumber])
   @@index([seasonId])
@@ -87,6 +113,7 @@ model Episode {
 model Video {
   id               String   @id @default(cuid())
   episodeId        String   @map("episode_id")
+  uploadId         String?  @map("upload_id")
   filePath         String   @map("file_path")
   mimeType         String   @map("mime_type")
   fileSize         BigInt   @map("file_size")
@@ -101,9 +128,27 @@ model Video {
   updatedAt        DateTime @updatedAt @map("updated_at")
 
   episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  upload  Upload? @relation(fields: [uploadId], references: [id], onDelete: SetNull)
 
   @@index([episodeId])
+  @@index([uploadId])
   @@map("videos")
+}
+
+model Upload {
+  id          String   @id @default(cuid())
+  ownerId     String   @map("owner_id")
+  title       String
+  description String?  @db.Text
+  status      String   @default("UPLOADED")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  owner  User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  videos Video[]
+
+  @@index([ownerId])
+  @@map("uploads")
 }
 
 // =============================================================================
@@ -174,4 +219,48 @@ model Like {
   @@index([userId])
   @@index([episodeId])
   @@map("likes")
+}
+
+model Save {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  episodeId String   @map("episode_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, episodeId])
+  @@index([userId])
+  @@map("saves")
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  episodeId String   @map("episode_id")
+  body      String   @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user    User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  episode Episode      @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  likes   CommentLike[]
+
+  @@index([episodeId, createdAt])
+  @@index([userId])
+  @@map("comments")
+}
+
+model CommentLike {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  commentId String   @map("comment_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  comment Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, commentId])
+  @@index([commentId])
+  @@index([userId])
+  @@map("comment_likes")
 }

@@ -16,11 +16,27 @@ describe('AppController (e2e)', () => {
     await app.init();
   });
 
-  it('/ (GET)', () => {
+  // The legacy `Hello World!` route was replaced by `GET /api/v1/health`
+  // (the global prefix moves everything under `/api/v1`). The boot probe is
+  // marked `@Public()` so it does not require an access token.
+  it('/api/v1/health (GET) is reachable without a cookie', () => {
     return request(app.getHttpServer())
-      .get('/')
+      .get('/api/v1/health')
       .expect(200)
-      .expect('Hello World!');
+      .expect((res) => {
+        if (!res.body || res.body.status !== 'ok') {
+          throw new Error(
+            `expected health.status === "ok", got ${JSON.stringify(res.body)}`,
+          );
+        }
+      });
+  });
+
+  // Surface route not found as 404 (no JwtAuthGuard bypass for an unknown path).
+  it('returns 404 for an unknown public path', () => {
+    return request(app.getHttpServer())
+      .get('/this-path-does-not-exist')
+      .expect(404);
   });
 
   afterEach(async () => {

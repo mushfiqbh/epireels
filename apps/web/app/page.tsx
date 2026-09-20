@@ -1,5 +1,5 @@
-import EpiReelsApp from "@/components/EpiReelsApp";
+import { redirect } from "next/navigation";
 
 export default function Home() {
-  return <EpiReelsApp />;
+  redirect("/foryou");
 }

@@ -12,11 +12,7 @@
     "sourceMap": true,
     "outDir": "./dist",
     "rootDir": "./src",
-    "baseUrl": ".",
-    "paths": {
-      "@epireels/types": ["../../packages/types/dist/index.d.ts"],
-      "@epireels/types/*": ["../../packages/types/dist/*"]
-    },
+
     "incremental": true,
     "skipLibCheck": true,
     "strict": true,
