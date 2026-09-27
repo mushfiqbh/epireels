@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import {
-  uploadAdminVideo,
   uploadVideo,
   type AdminUploadResponse,
 } from "@/lib/api/upload";

@@ -24,19 +24,6 @@ export class VideoService {
       status: video.processingStatus,
     };
     if (video.processingStatus === 'READY') {
-      const hasPoster = video.thumbnailPath
-        ? await this.storage.exists(video.thumbnailPath)
-        : false;
-      const hasManifest = video.streamPath
-        ? await this.storage.exists(video.streamPath)
-        : false;
-      if (!hasPoster || !hasManifest) {
-        return {
-          videoId: video.id,
-          status: 'FAILED',
-          error: 'Processed media files are missing from storage.',
-        };
-      }
       if (video.thumbnailPath)
         result.posterUrl = this.withVideoVersion(
           this.storage.getUrl(video.thumbnailPath),

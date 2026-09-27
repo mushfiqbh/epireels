@@ -31,7 +31,7 @@ import { Public } from '../../common/decorators/public.decorator';
 function resolveAllowedOrigin(req: Request): string {
   const raw =
     process.env.WEB_ORIGIN ??
-    'http://localhost:3000,http://localhost:8081,http://localhost:19006';
+    'http://localhost:3000,http://localhost:8081,http://localhost:19006,https://epireels.netlify.app';
   const allowed = raw
     .split(',')
     .map((origin) => origin.trim())

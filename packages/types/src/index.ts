@@ -274,6 +274,29 @@ export interface AdminUploadResponseDto {
     seriesId: string;
   };
 }
+/**
+ * Request body for `POST /api/v1/videos/upload-url`. The browser hands
+ * the file metadata to the API, which returns a presigned PUT URL
+ * scoped to the requested content type. The browser then `PUT`s the
+ * file bytes directly to object storage — large videos never flow
+ * through the API process.
+ */
+export interface UploadUrlRequestDto {
+  filename: string;
+  contentType: string;
+}
+
+/**
+ * Response body from `POST /api/v1/videos/upload-url`. `videoId` is
+ * minted server-side; the client carries it through to
+ * `POST /api/v1/videos/:id/upload-complete` to confirm the upload.
+ */
+export interface UploadUrlResponseDto {
+  videoId: string;
+  key: string;
+  uploadUrl: string;
+  expiresInSeconds: number;
+}
 
 /** Comment payload for the comment drawer / feed. */
 export interface Comment {

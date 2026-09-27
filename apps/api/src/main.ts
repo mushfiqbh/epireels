@@ -15,7 +15,7 @@ async function bootstrap() {
   // In production the web origin should be set explicitly via env.
   const allowedOrigins = (
     process.env.WEB_ORIGIN ??
-    'http://localhost:3000,http://localhost:8081,http://localhost:19006,https://epireels.vercel.app'
+    'http://localhost:3000,http://localhost:8081,http://localhost:19006,https://epireels.netlify.app'
   )
     .split(',')
     .map((origin) => origin.trim())

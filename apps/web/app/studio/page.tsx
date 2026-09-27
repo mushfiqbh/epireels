@@ -36,12 +36,25 @@ export default function StudioPage() {
     }
   }, [status, requireSignIn]);
 
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
   const handleDelete = async (uploadId: string) => {
+    setDeletingId(uploadId);
+    setDeleteError(null);
     try {
       await deleteUpload(uploadId);
       setUploads((prev) => prev.filter((u) => u.id !== uploadId));
     } catch (err) {
-      console.error("Failed to delete upload", err);
+      if (err instanceof ApiError && err.status === 401) {
+        requireSignIn();
+        return;
+      }
+      setDeleteError(
+        err instanceof Error ? err.message : "Failed to delete upload. Please try again."
+      );
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -57,7 +70,10 @@ export default function StudioPage() {
     <AppLayout>
       <StudioView
         uploads={uploads}
+        deletingId={deletingId}
+        deleteError={deleteError}
         onDelete={handleDelete}
+        onDismissError={() => setDeleteError(null)}
         onRefresh={fetchUploads}
       />
     </AppLayout>

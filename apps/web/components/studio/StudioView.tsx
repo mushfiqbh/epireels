@@ -1,23 +1,30 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Video, Upload, Trash2, MoreVertical, Clock, FileText, Loader2 } from "lucide-react";
+import { Video, Upload, Trash2, MoreVertical, Clock, FileText, Loader2, X, AlertTriangle } from "lucide-react";
 import UploadForm from "@/components/UploadForm";
 import type { UploadItem } from "@/lib/api/uploads";
 
 interface StudioViewProps {
   uploads: UploadItem[];
+  deletingId: string | null;
+  deleteError: string | null;
   onDelete: (uploadId: string) => void;
+  onDismissError: () => void;
   onRefresh: () => void;
 }
 
 export default function StudioView({
   uploads,
+  deletingId,
+  deleteError,
   onDelete,
+  onDismissError,
   onRefresh,
 }: StudioViewProps) {
   const [showUpload, setShowUpload] = useState(false);
   const [activeTab, setActiveTab] = useState<"uploads" | "upload">("uploads");
+  const [pendingDelete, setPendingDelete] = useState<UploadItem | null>(null);
 
   // Auto-refresh uploads every 5 seconds if any are processing
   useEffect(() => {
@@ -125,6 +132,23 @@ export default function StudioView({
         </div>
       </div>
 
+      {/* Error banner */}
+      {deleteError && (
+        <div className="container mx-auto px-4 mt-4">
+          <div className="flex items-start gap-3 rounded-lg border border-yt-red/40 bg-yt-red/10 px-4 py-3 text-sm text-white">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-yt-red" />
+            <p className="flex-1">{deleteError}</p>
+            <button
+              onClick={onDismissError}
+              className="rounded-full p-1 text-white/60 transition hover:bg-white/10 hover:text-white"
+              aria-label="Dismiss error"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Content */}
       <div className="container mx-auto px-4 mt-6">
         {activeTab === "uploads" ? (
@@ -191,11 +215,17 @@ export default function StudioView({
                       {/* Actions */}
                       <div className="flex items-center gap-2">
                         <button
-                          onClick={() => onDelete(upload.id)}
-                          className="flex h-8 w-8 items-center justify-center rounded-full text-white/60 transition hover:bg-yt-red/20 hover:text-yt-red"
+                          onClick={() => setPendingDelete(upload)}
+                          disabled={deletingId === upload.id}
+                          className="flex h-8 w-8 items-center justify-center rounded-full text-white/60 transition hover:bg-yt-red/20 hover:text-yt-red disabled:cursor-not-allowed disabled:opacity-50"
                           title="Delete"
+                          aria-label={`Delete ${upload.title}`}
                         >
-                          <Trash2 className="h-4 w-4" />
+                          {deletingId === upload.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
                         </button>
                       </div>
                     </div>
@@ -210,6 +240,56 @@ export default function StudioView({
           </div>
         )}
       </div>
+
+      {/* Delete confirmation modal */}
+      {pendingDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4"
+          onClick={() => !deletingId && setPendingDelete(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-confirm-title"
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border border-white/10 bg-yt-dark p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-4 flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-yt-red/15">
+                <AlertTriangle className="h-5 w-5 text-yt-red" />
+              </div>
+              <h2 id="delete-confirm-title" className="text-lg font-semibold text-white">
+                Delete video?
+              </h2>
+            </div>
+            <p className="text-sm text-white/70">
+              <span className="font-medium text-white">{pendingDelete.title}</span> will be
+              permanently deleted. This action cannot be undone.
+            </p>
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                onClick={() => setPendingDelete(null)}
+                disabled={!!deletingId}
+                className="rounded-full px-4 py-2 text-sm font-medium text-white/80 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  const target = pendingDelete;
+                  setPendingDelete(null);
+                  await onDelete(target.id);
+                }}
+                disabled={!!deletingId}
+                className="flex items-center gap-2 rounded-full bg-yt-red px-4 py-2 text-sm font-medium text-white transition hover:bg-yt-red/90 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

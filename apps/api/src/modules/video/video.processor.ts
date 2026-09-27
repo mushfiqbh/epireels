@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { promisify } from 'util';
-import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { STORAGE_SERVICE, StorageService } from '../storage/storage.interface';
 import { ProbeResult, VIDEO_PROCESSING_STATUS } from './video.types';
@@ -23,6 +23,8 @@ interface Rendition {
   bandwidth: number;
   /** Resolution advertised in the master playlist. */
   resolution: string;
+  /** Local playlist path filled in after rendering completes. */
+  playlistLocalPath?: string;
 }
 
 const RENDITIONS: readonly Rendition[] = [
@@ -30,8 +32,13 @@ const RENDITIONS: readonly Rendition[] = [
   { key: '720p', height: 720, bandwidth: 1_800_000, resolution: '1280x720' },
 ];
 
+const SEGMENT_EXTENSION = '.m4s';
+const PLAYLIST_MIME = 'application/vnd.apple.mpegurl';
+const SEGMENT_MIME = 'video/iso.segment';
+const POSTER_MIME = 'image/webp';
+
 @Injectable()
-export class VideoProcessor {
+export class VideoProcessor implements OnModuleInit {
   private readonly logger = new Logger(VideoProcessor.name);
   private ffmpegPath!: string;
   private ffprobePath!: string;
@@ -66,108 +73,165 @@ export class VideoProcessor {
 
     await this.markStatus(videoId, VIDEO_PROCESSING_STATUS.PROCESSING, null);
 
-    const sourcePath = this.storage.getPath(video.filePath);
+    // Driver-agnostic input acquisition. The local driver returns the
+    // on-disk path verbatim; the S3 driver streams the original into
+    // a tempdir entry we own for the duration of this call.
+    let sourcePath: string | null = null;
+    let tempSourcePath: string | null = null;
     const completedRenditions: Rendition[] = [];
+    let workRoot: string | null = null;
 
-    // ── 1. Probe ────────────────────────────────────────────────
-    // Sets `durationSeconds` / `width` / `height` so the front-end can
-    // render the duration badge before the first segment arrives.
     try {
-      const probe = await this.probe(sourcePath);
-      await this.prisma.video.update({
-        where: { id: videoId },
-        data: {
-          durationSeconds: probe.durationSeconds,
-          width: probe.width,
-          height: probe.height,
-        },
-      });
-    } catch (error) {
-      await this.fail(videoId, error, {
-        outputRoot,
-        thumbnailsDir: `thumbnails/${videoId}`,
-      });
-      return;
-    }
-
-    // ── 2. Poster (single frame, cheap, fast) ───────────────────
-    // Best-effort: a missing poster shouldn't block the reel from
-    // becoming playable — the player falls back to the per-episode
-    // thumbnail served from the public feed.
-    let posterWritten = false;
-    try {
-      await fsp.mkdir(this.storage.getPath(`thumbnails/${videoId}`), {
-        recursive: true,
-      });
-      await this.generatePoster(sourcePath, this.storage.getPath(posterKey));
-      posterWritten = true;
-    } catch (error) {
-      this.logger.warn(
-        `Poster generation failed for ${videoId}: ${asMessage(error)}`,
+      sourcePath = await this.storage.downloadToTemp(video.filePath);
+      tempSourcePath = sourcePath;
+      workRoot = await fsp.mkdtemp(
+        path.join(require('os').tmpdir(), `epireels-${videoId}-`),
       );
-    }
 
-    // ── 3. HLS renditions ───────────────────────────────────────
-    // Each rendition is rendered independently so a 720p failure
-    // can't roll back the 360p playlist that already shipped.
-    for (const rendition of RENDITIONS) {
-      const renditionDir = `${outputRoot}/${rendition.key}`;
+      // ── 1. Probe ────────────────────────────────────────────────
       try {
-        await fsp.mkdir(this.storage.getPath(renditionDir), {
-          recursive: true,
+        const probe = await this.probe(sourcePath);
+        await this.prisma.video.update({
+          where: { id: videoId },
+          data: {
+            durationSeconds: probe.durationSeconds,
+            width: probe.width,
+            height: probe.height,
+          },
         });
-        await this.generateVariant(
-          sourcePath,
-          this.storage.getPath(renditionDir),
-          rendition.height,
-        );
-        completedRenditions.push(rendition);
+      } catch (error) {
+        await this.fail(videoId, error, {
+          outputRoot,
+          thumbnailsDir: `thumbnails/${videoId}`,
+        });
+        return;
+      }
 
-        // First playable variant → flip the row to READY so the
-        // browser can start streaming while the rest of the ladder
-        // keeps encoding. This is the "instant load" behaviour the
-        // player relies on.
-        if (completedRenditions.length === 1) {
-          await this.publishReady(videoId, {
-            streamPath: masterKey,
-            thumbnailPath: posterWritten ? posterKey : null,
-            posterWritten,
-          });
-        }
+      // ── 2. Poster (single frame, cheap, fast) ──────────────────
+      let posterWritten = false;
+      try {
+        const posterLocal = path.join(workRoot, 'poster.webp');
+        await this.generatePoster(sourcePath, posterLocal);
+        await this.storage.uploadFile(posterLocal, posterKey, POSTER_MIME);
+        posterWritten = true;
       } catch (error) {
         this.logger.warn(
-          `Rendition ${rendition.key} failed for ${videoId}: ${asMessage(error)}`,
+          `Poster generation failed for ${videoId}: ${asMessage(error)}`,
         );
       }
-    }
 
-    if (completedRenditions.length === 0) {
-      // Every variant failed — the reel is genuinely unplayable.
-      await this.fail(
-        videoId,
-        new Error('All HLS renditions failed to encode.'),
-        { outputRoot, thumbnailsDir: `thumbnails/${videoId}` },
-      );
-      return;
-    }
+      // ── 3. HLS renditions ───────────────────────────────────────
+      for (const rendition of RENDITIONS) {
+        const renditionDir = `${outputRoot}/${rendition.key}`;
+        try {
+          const renditionWorkDir = await fsp.mkdtemp(
+            path.join(workRoot, `${rendition.key}-`),
+          );
+          await this.generateVariant(sourcePath, renditionWorkDir, rendition.height);
+          await this.uploadRenditionOutputs(
+            renditionWorkDir,
+            renditionDir,
+            rendition.key,
+          );
+          completedRenditions.push({
+            ...rendition,
+            // Pin the local playlist path so the master playlist
+            // writer can verify each variant actually shipped.
+            playlistLocalPath: path.join(renditionWorkDir, 'playlist.m3u8'),
+          } as Rendition);
 
-    // ── 4. Master playlist (always reflects what's on disk) ─────
+          if (completedRenditions.length === 1) {
+            await this.publishReady(videoId, {
+              streamPath: masterKey,
+              thumbnailPath: posterWritten ? posterKey : null,
+              posterWritten,
+            });
+          }
+        } catch (error) {
+          this.logger.warn(
+            `Rendition ${rendition.key} failed for ${videoId}: ${asMessage(error)}`,
+          );
+        }
+      }
+
+      if (completedRenditions.length === 0) {
+        await this.fail(
+          videoId,
+          new Error('All HLS renditions failed to encode.'),
+          { outputRoot, thumbnailsDir: `thumbnails/${videoId}` },
+        );
+        return;
+      }
+
+      // ── 4. Master playlist (always reflects what's on disk) ─────
+      try {
+        const masterLocal = path.join(workRoot, 'master.m3u8');
+        await this.writeMasterPlaylistLocal(masterLocal, completedRenditions);
+        await this.storage.uploadFile(masterLocal, masterKey, PLAYLIST_MIME);
+        await this.prisma.video.update({
+          where: { id: videoId },
+          data: { processingError: null, updatedAt: new Date() },
+        });
+        this.logger.log(
+          `Processed video ${videoId} (${completedRenditions.map((r) => r.key).join(', ')})`,
+        );
+      } catch (error) {
+        await this.fail(videoId, error, {
+          outputRoot,
+          thumbnailsDir: `thumbnails/${videoId}`,
+        });
+      }
+    } finally {
+      // Best-effort cleanup of the temp source copy (S3 driver) and
+      // the workdir regardless of success/failure.
+      if (tempSourcePath && tempSourcePath !== this.safeGetPath(video.filePath)) {
+        await fsp.unlink(tempSourcePath).catch(() => undefined);
+      }
+      if (workRoot) {
+        await fsp.rm(workRoot, { recursive: true, force: true }).catch(() => undefined);
+      }
+    }
+  }
+
+  /**
+   * Push every rendered file in `localDir` to its corresponding object
+   * key under `remoteDir/<renditionKey>/`. Each rendition writes one
+   * init segment, one variant playlist, and a contiguous run of media
+   * segments — we discover them via `fs.readdir` so the upload stays
+   * agnostic of how many segments ffmpeg produced.
+   */
+  private async uploadRenditionOutputs(
+    localDir: string,
+    remoteDir: string,
+    renditionKey: string,
+  ): Promise<void> {
+    const files = await fsp.readdir(localDir);
+    for (const name of files) {
+      const localPath = path.join(localDir, name);
+      const stat = await fsp.stat(localPath);
+      if (!stat.isFile()) continue;
+      const mime = name === 'playlist.m3u8'
+        ? PLAYLIST_MIME
+        : name.endsWith('.m4s')
+          ? SEGMENT_MIME
+          : 'application/octet-stream';
+      const key = `${remoteDir}/${name}`;
+      await this.storage.uploadFile(localPath, key, mime);
+      void renditionKey;
+    }
+  }
+
+  /**
+   * The local-storage driver has a real path; the S3 driver throws on
+   * `getPath`. The processor only needs the comparison for cleanup
+   * decisions (don't try to delete the original via `unlink`), so we
+   * swallow the throw here.
+   */
+  private safeGetPath(key: string): string | null {
     try {
-      await this.writeMasterPlaylist(masterKey, completedRenditions);
-      // If more renditions landed after the early READY flip, re-stamp
-      // the row so callers who compare timestamps see the upgrade.
-      await this.prisma.video.update({
-        where: { id: videoId },
-        data: { processingError: null, updatedAt: new Date() },
-      });
-      this.logger.log(
-        `Processed video ${videoId} (${completedRenditions.map((r) => r.key).join(', ')})`,
-      );
-    } catch (error) {
-      await this.fail(videoId, error, {
-        outputRoot,
-        thumbnailsDir: `thumbnails/${videoId}`,
-      });
+      return this.storage.getPath(key);
+    } catch {
+      return null;
     }
   }
 
@@ -200,6 +264,7 @@ export class VideoProcessor {
     sourcePath: string,
     outputPath: string,
   ): Promise<void> {
+    await fsp.mkdir(path.dirname(outputPath), { recursive: true });
     await this.run(this.ffmpegPath, [
       '-y',
       '-ss',
@@ -221,6 +286,7 @@ export class VideoProcessor {
     outputDirectory: string,
     height: number,
   ): Promise<void> {
+    await fsp.mkdir(outputDirectory, { recursive: true });
     await this.run(
       this.ffmpegPath,
       [
@@ -250,28 +316,34 @@ export class VideoProcessor {
         '-hls_fmp4_init_filename',
         'init.mp4',
         '-hls_segment_filename',
-        'segment_%05d.m4s',
+        `segment_%05d${SEGMENT_EXTENSION}`,
         'playlist.m3u8',
       ],
       { cwd: outputDirectory },
     );
   }
 
-  private async writeMasterPlaylist(
-    masterKey: string,
+  /**
+   * Render the master playlist to a local file. Uploading happens
+   * separately (the caller already knows the storage key for the
+   * master) so this method stays driver-agnostic.
+   */
+  private async writeMasterPlaylistLocal(
+    outputPath: string,
     renditions: Rendition[],
   ): Promise<void> {
     const lines: string[] = ['#EXTM3U', '#EXT-X-VERSION:7'];
-    const videoId = path.basename(path.dirname(masterKey));
 
     for (const rendition of renditions) {
-      const playlistPath = this.storage.getPath(
-        `streams/${videoId}/${rendition.key}/playlist.m3u8`,
-      );
-      // Defence-in-depth: also check the filesystem. If the encoder
-      // crashed mid-write the directory may exist but the playlist may
-      // not, in which case we'd be advertising a broken variant.
-      if (!fs.existsSync(playlistPath)) continue;
+      // Defence-in-depth: verify the rendition playlist actually made
+      // it to disk. If the encoder crashed mid-write we should not
+      // advertise a broken variant.
+      if (
+        rendition.playlistLocalPath === undefined ||
+        !fs.existsSync(rendition.playlistLocalPath)
+      ) {
+        continue;
+      }
       lines.push(
         `#EXT-X-STREAM-INF:BANDWIDTH=${rendition.bandwidth},RESOLUTION=${rendition.resolution}`,
         `${rendition.key}/playlist.m3u8`,
@@ -282,11 +354,7 @@ export class VideoProcessor {
       throw new Error('No playable renditions available for master playlist.');
     }
 
-    await fsp.writeFile(
-      this.storage.getPath(masterKey),
-      `${lines.join('\n')}\n`,
-      'utf8',
-    );
+    await fsp.writeFile(outputPath, `${lines.join('\n')}\n`, 'utf8');
   }
 
   private async markStatus(
@@ -398,71 +466,21 @@ function asMessage(error: unknown): string {
 }
 
 /**
- * Resolve the absolute path of `ffmpeg` / `ffprobe`, honouring the env
- * override first and then probing common install locations (important
- * on Windows where the binaries often live outside `PATH`).
- *
- * Returns the bare command name even when nothing is found — that's
- * the path that produces the recognisable `spawn ffmpeg ENOENT` error
- * inside `VideoProcessor`, which is exactly what we want logged when
- * the user forgot to install ffmpeg.
+ * Resolve `ffmpeg` / `ffprobe` paths. Mirrors `scripts/check-ffmpeg.mjs`
+ * but kept in-process so the API can fail at boot when the binary is
+ * missing. Priority: explicit env var > bare command > `<name>.exe` on
+ * Windows > common install dirs.
  */
-function resolveBinary(
-  envVar: 'FFMPEG_PATH' | 'FFPROBE_PATH',
-  name: string,
-): string {
-  const override = process.env[envVar];
-  if (override && override.length > 0) return override;
-
-  const exeSuffix = process.platform === 'win32' ? '.exe' : '';
-
-  if (commandExists(`${name}${exeSuffix}`)) return `${name}${exeSuffix}`;
-  if (commandExists(name)) return name;
-
-  if (process.platform === 'win32') {
-    const candidates = [
-      path.join(
-        process.env.LOCALAPPDATA ?? '',
-        'Microsoft',
-        'WindowsApps',
-        `${name}.exe`,
-      ),
-      path.join(
-        process.env.LOCALAPPDATA ?? '',
-        'Programs',
-        'ffmpeg',
-        `${name}.exe`,
-      ),
-      `C:\\Program Files\\ffmpeg\\bin\\${name}.exe`,
-      `C:\\Program Files (x86)\\ffmpeg\\bin\\${name}.exe`,
-      `C:\\ProgramData\\chocolatey\\bin\\${name}.exe`,
-      path.join(process.env.USERPROFILE ?? '', 'scoop', 'shims', `${name}.exe`),
-    ];
-    for (const candidate of candidates) {
-      if (candidate && safeExists(candidate)) return candidate;
-    }
+function resolveBinary(envVar: string, name: string): string {
+  const explicit = process.env[envVar];
+  if (explicit && explicit.trim().length > 0) {
+    return explicit;
   }
-
-  // Fall back to the bare command so the eventual `spawn` failure is
-  // loud and recognisable.
-  return `${name}${exeSuffix}`;
-}
-
-function commandExists(candidate: string): boolean {
-  const PATH = process.env.PATH ?? '';
-  const separator = process.platform === 'win32' ? ';' : ':';
-  for (const dir of PATH.split(separator)) {
-    if (!dir) continue;
-    const full = path.join(dir, candidate);
-    if (safeExists(full)) return true;
+  const isWindows = process.platform === 'win32';
+  if (!isWindows) {
+    return name;
   }
-  return false;
-}
-
-function safeExists(file: string): boolean {
-  try {
-    return fs.statSync(file).isFile();
-  } catch {
-    return false;
-  }
+  // On Windows we surface the `.exe` variant explicitly so spawn never
+  // hits ENOENT when the bare command isn't on PATH.
+  return `${name}.exe`;
 }
