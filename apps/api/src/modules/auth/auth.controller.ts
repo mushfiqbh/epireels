@@ -121,19 +121,38 @@ export class AuthController {
     return this.auth.buildBootstrap(user, csrfToken);
   }
 
-  // ---------------------------------------------------------------- helpers
+  /**
+   * Build the cookie attribute set used for every session cookie.
+   *
+   * In production the front-end (`https://epireels.netlify.app`) lives on
+   * a different site than the API (`https://api.barnomala.com`), so we
+   * MUST use `SameSite=None; Secure` — otherwise the browser refuses to
+   * attach `aep_at` / `aep_rt` on cross-site navigation and every
+   * authenticated request 401s. Local dev keeps `lax` so the cookies
+   * still work without HTTPS.
+   */
+  private sessionCookieAttrs(): {
+    sameSite: 'none' | 'lax';
+    secure: boolean;
+  } {
+    const isProd = this.config.get<string>('NODE_ENV') === 'production';
+    return {
+      sameSite: isProd ? 'none' : 'lax',
+      secure: isProd,
+    };
+  }
 
   private applySessionCookies(
     res: Response,
     session: { accessToken: string; refreshToken: string; csrfToken: string },
   ): void {
-    const isProd = this.config.get<string>('NODE_ENV') === 'production';
+    const { sameSite, secure } = this.sessionCookieAttrs();
     const accessTtl = this.auth.accessTtlMs;
     const refreshTtl = this.auth.refreshTtlMs;
     const baseCookie = {
       httpOnly: true,
-      sameSite: 'lax' as const,
-      secure: isProd,
+      sameSite,
+      secure,
       path: '/',
     };
     res.cookie(COOKIE_ACCESS, session.accessToken, {
@@ -142,22 +161,29 @@ export class AuthController {
     });
     res.cookie(COOKIE_REFRESH, session.refreshToken, {
       ...baseCookie,
-      sameSite: 'strict',
       maxAge: refreshTtl,
     });
     const signed = signCsrfToken(session.csrfToken, this.jwtSecret);
     res.cookie(COOKIE_CSRF, signed, {
       httpOnly: false, // readable by JS so the client can echo it back
-      sameSite: 'lax',
-      secure: isProd,
+      sameSite,
+      secure,
       path: '/',
       maxAge: refreshTtl,
     });
   }
 
   private clearSessionCookies(res: Response): void {
+    const { sameSite, secure } = this.sessionCookieAttrs();
     for (const name of [COOKIE_ACCESS, COOKIE_REFRESH, COOKIE_CSRF]) {
-      res.clearCookie(name, { path: '/' });
+      // The attributes MUST match the ones used when the cookie was set,
+      // otherwise the browser keeps the original cookie instead of clearing
+      // it. With SameSite=None + Secure this matters more than ever.
+      res.clearCookie(name, {
+        path: '/',
+        sameSite,
+        secure,
+      });
     }
   }
 
@@ -165,16 +191,17 @@ export class AuthController {
   private rotateCsrfCookie(res: Response): string {
     const raw = generateOpaqueToken(24);
     const signed = signCsrfToken(raw, this.jwtSecret);
-    const isProd = this.config.get<string>('NODE_ENV') === 'production';
+    const { sameSite, secure } = this.sessionCookieAttrs();
     res.cookie(COOKIE_CSRF, signed, {
       httpOnly: false,
-      sameSite: 'lax',
-      secure: isProd,
+      sameSite,
+      secure,
       path: '/',
       maxAge: this.auth.refreshTtlMs,
     });
     return raw;
   }
+
 
   private get jwtSecret(): string {
     const secret = this.config.get<string>('JWT_SECRET');

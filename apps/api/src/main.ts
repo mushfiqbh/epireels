@@ -22,7 +22,12 @@ async function bootstrap() {
   app.use(helmet({ contentSecurityPolicy: false }));
 
   // Permit the Next.js dev server to hit the API during local dev.
-  // In production the web origin should be set explicitly via env.
+  // In production the web origin MUST be set explicitly via WEB_ORIGIN —
+  // an empty allow-list silently opens CORS to every origin, which would
+  // also work with `credentials: true` but means any malicious site the
+  // user visits can issue authenticated cross-origin requests against
+  // this API. Set `WEB_ORIGIN=https://epireels.netlify.app` (comma-
+  // separated for multiple frontends) in the aaPanel env.
   const allowedOrigins = (
     process.env.WEB_ORIGIN ??
     'http://localhost:3000,http://localhost:8081,http://localhost:19006,https://epireels.netlify.app'
@@ -31,7 +36,7 @@ async function bootstrap() {
     .map((origin) => origin.trim())
     .filter(Boolean);
   app.enableCors({
-    origin: allowedOrigins.length > 0 ? allowedOrigins : true,
+    origin: allowedOrigins,
     credentials: true,
   });
 
