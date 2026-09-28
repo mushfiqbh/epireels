@@ -18,8 +18,10 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 import { PrismaModule } from './prisma/prisma.module';
 
+import { LoggingModule } from './common/logging/logging.module';
 @Module({
   imports: [
+    LoggingModule,
     PrismaModule,
     StorageModule,
     MediaModule,

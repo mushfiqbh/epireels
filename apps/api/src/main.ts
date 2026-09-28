@@ -4,8 +4,18 @@ import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 
+import { WinstonModule } from 'nest-winston';
+import { buildWinstonConfig } from './common/logging/winston.config';
+
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, {
+    // Replace the default console-only Nest logger with Winston so the
+    // framework's bootstrap banner, route table, and every Nest-managed
+    // `Logger` flow through the same transports defined in
+    // `common/logging/winston.config.ts` (console + rotated file logs).
+    logger: WinstonModule.createLogger(buildWinstonConfig()),
+    bufferLogs: true,
+  });
 
   // Security headers — CSP stays permissive since the web app is served
   // from a different origin than the API in production.

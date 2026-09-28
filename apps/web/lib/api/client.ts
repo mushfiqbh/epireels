@@ -192,5 +192,14 @@ export async function apiFetch<T>(
       body,
     );
   }
+
+  // 204/205 have no body. Calling `.json()` on an empty body throws
+  // `SyntaxError: Unexpected end of JSON input` (e.g. `POST /auth/logout`
+  // returns 204). Return `undefined` so `apiFetch<void>` callers get the
+  // typed contract without each one having to special-case no-content.
+  if (res.status === 204 || res.status === 205) {
+    return undefined as T;
+  }
+
   return (await res.json()) as T;
 }
