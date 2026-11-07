@@ -23,6 +23,11 @@ export const COOKIE_ACCESS = "aep_at";
 export const COOKIE_REFRESH = "aep_rt";
 export const COOKIE_CSRF = "aep_csrf";
 
+// The API cookie is scoped to the API origin and therefore is not readable
+// through document.cookie when the web app is deployed on another origin.
+let csrfToken: string | undefined;
+let csrfBootstrapInFlight: Promise<string | undefined> | null = null;
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -78,7 +83,37 @@ export function getCookie(name: string): string | undefined {
  * (e.g. XSS) but not the secret can't forge a working pair.
  */
 export function getCsrfToken(): string | undefined {
-  return getCookie(COOKIE_CSRF);
+  return csrfToken ?? getCookie(COOKIE_CSRF);
+}
+
+/** Store the API-issued token for cross-origin requests. */
+export function setCsrfToken(token: string | undefined): void {
+  csrfToken = token;
+}
+
+/** Recover the token after a hard reload or an auth-provider race. */
+async function ensureCsrfToken(): Promise<string | undefined> {
+  const existing = getCsrfToken();
+  if (existing) return existing;
+  if (csrfBootstrapInFlight) return csrfBootstrapInFlight;
+
+  csrfBootstrapInFlight = (async () => {
+    try {
+      const res = await fetch(apiUrl("/api/v1/auth/me"), {
+        cache: "no-store",
+        credentials: "include",
+      });
+      if (!res.ok) return undefined;
+      const body = (await res.json()) as { csrfToken?: string };
+      setCsrfToken(body.csrfToken);
+      return body.csrfToken;
+    } catch {
+      return undefined;
+    } finally {
+      csrfBootstrapInFlight = null;
+    }
+  })();
+  return csrfBootstrapInFlight;
 }
 
 /** HTTP verbs that require a CSRF token. GET/HEAD/OPTIONS are exempt. */
@@ -100,6 +135,10 @@ async function attemptRefresh(): Promise<boolean> {
         method: "POST",
         credentials: "include",
       });
+      if (res.ok) {
+        const body = (await res.json()) as { csrfToken?: string };
+        setCsrfToken(body.csrfToken);
+      }
       return res.ok;
     } catch {
       return false;
@@ -130,7 +169,7 @@ export async function apiFetch<T>(
 
   const headers = new Headers(init?.headers ?? {});
   if (UNSAFE_METHODS.has(method)) {
-    const csrf = getCsrfToken();
+    const csrf = await ensureCsrfToken();
     if (csrf && !headers.has("x-csrf-token")) {
       headers.set("x-csrf-token", csrf);
     }

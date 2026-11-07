@@ -5,6 +5,7 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { ConfigService } from '@nestjs/config';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { Request } from 'express';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
@@ -14,17 +15,21 @@ import { COOKIE_CSRF, COOKIE_ACCESS } from '../../modules/auth/auth.service';
  * Double-submit cookie CSRF guard.
  *
  * For every non-`@Public()` request using a non-safe method
- * (anything other than GET / HEAD / OPTIONS), the value of the
- * `X-CSRF-Token` request header must match the `aep_csrf` cookie.
+ * (anything other than GET / HEAD / OPTIONS), the `X-CSRF-Token`
+ * request header must contain a server-signed token. When the
+ * `aep_csrf` cookie is available, it must also match the header.
  *
- * To make the cookie value unforgeable while remaining readable by
- * JavaScript, we sign it with HMAC-SHA256 using the JWT secret.
- * `verifyCsrfToken` verifies that the signature is genuine before
- * the timing-safe compare runs.
+ * To make the token unforgeable while remaining readable by JavaScript,
+ * we sign it with HMAC-SHA256 using the JWT secret. Header validation
+ * supports cross-origin frontends where browser privacy settings hide
+ * the API cookie from the frontend while still allowing credentials.
  */
 @Injectable()
 export class CsrfGuard implements CanActivate {
-  constructor(private readonly reflector: Reflector) {}
+  constructor(
+    private readonly reflector: Reflector,
+    private readonly config: ConfigService,
+  ) {}
 
   canActivate(context: ExecutionContext): boolean {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
@@ -43,10 +48,14 @@ export class CsrfGuard implements CanActivate {
       (req.headers['x-csrf-token'] as string | undefined) ?? '';
     const cookieToken = cookies[COOKIE_CSRF] ?? '';
 
-    if (!headerToken || !cookieToken) {
+    if (!headerToken) {
       throw new ForbiddenException('CSRF token missing');
     }
-    if (!safeEqualStrings(headerToken, cookieToken)) {
+    const secret = this.config.get<string>('JWT_SECRET');
+    if (!secret || !verifyCsrfToken(headerToken, secret)) {
+      throw new ForbiddenException('CSRF token invalid');
+    }
+    if (cookieToken && !safeEqualStrings(headerToken, cookieToken)) {
       throw new ForbiddenException('CSRF token mismatch');
     }
 

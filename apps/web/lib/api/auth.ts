@@ -7,7 +7,7 @@
  */
 
 import type { AuthBootstrap, LoginInput, SignupInput } from "@epireels/types";
-import { apiFetch } from "./client";
+import { apiFetch, setCsrfToken } from "./client";
 
 /** Create a new member account and immediately establish a session. */
 export function signup(input: SignupInput): Promise<AuthBootstrap> {
@@ -15,6 +15,9 @@ export function signup(input: SignupInput): Promise<AuthBootstrap> {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(input),
+  }).then((bootstrap) => {
+    setCsrfToken(bootstrap.csrfToken);
+    return bootstrap;
   });
 }
 
@@ -24,18 +27,24 @@ export function login(input: LoginInput): Promise<AuthBootstrap> {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(input),
+  }).then((bootstrap) => {
+    setCsrfToken(bootstrap.csrfToken);
+    return bootstrap;
   });
 }
 
 /** Tell the server to revoke the refresh token; ignores the (204) body. */
 export async function logout(): Promise<void> {
   await apiFetch<void>("/api/v1/auth/logout", { method: "POST" });
+  setCsrfToken(undefined);
 }
 
 /** Return the current session, or `null` when anonymous (cookie-less). */
 export async function me(): Promise<AuthBootstrap | null> {
   try {
-    return await apiFetch<AuthBootstrap>("/api/v1/auth/me");
+    const bootstrap = await apiFetch<AuthBootstrap>("/api/v1/auth/me");
+    setCsrfToken(bootstrap.csrfToken);
+    return bootstrap;
   } catch (error) {
     // `ApiError` with status 401 means "no session" — surface as null so
     // callers don't have to distinguish between "loading" and "logged out".

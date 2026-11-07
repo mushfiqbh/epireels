@@ -36,9 +36,18 @@ function resolveAllowedOrigin(req: Request): string {
     .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean);
+
   const requestOrigin = req.headers.origin;
   if (!requestOrigin) return '*';
+  // In production WEB_ORIGIN MUST be set — fall back to the first
+  // configured origin instead of wildcarding (which would defeat the
+  // whole point of the allow-list and let any site authenticate against
+  // the API). In dev (no env) keep wildcarding so localhost quirks
+  // don't break `<video>` probes.
   if (allowed.length === 0) return '*';
+  if (!process.env.WEB_ORIGIN) {
+    return allowed.includes(requestOrigin) ? requestOrigin : '*';
+  }
   return allowed.includes(requestOrigin) ? requestOrigin : allowed[0];
 }
 
