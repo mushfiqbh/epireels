@@ -99,7 +99,7 @@ async function ensureCsrfToken(): Promise<string | undefined> {
 
   csrfBootstrapInFlight = (async () => {
     try {
-      const res = await fetch(apiUrl("/api/v1/auth/me"), {
+      const res = await fetch(apiUrl("/api/v1/auth/csrf"), {
         cache: "no-store",
         credentials: "include",
       });
@@ -131,9 +131,13 @@ async function attemptRefresh(): Promise<boolean> {
   if (refreshInFlight) return refreshInFlight;
   refreshInFlight = (async () => {
     try {
+      const csrf = await ensureCsrfToken();
+      const headers = new Headers();
+      if (csrf) headers.set("x-csrf-token", csrf);
       const res = await fetch(apiUrl("/api/v1/auth/refresh"), {
         method: "POST",
         credentials: "include",
+        headers,
       });
       if (res.ok) {
         const body = (await res.json()) as { csrfToken?: string };

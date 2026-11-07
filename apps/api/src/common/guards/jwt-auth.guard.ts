@@ -15,9 +15,8 @@ import {
 /**
  * Global JWT guard.
  *
- * Reads the access JWT from the `aep_at` HttpOnly cookie. Routes
- * decorated with `@Public()` are skipped entirely. A missing or
- * invalid token yields `401 UNAUTHORIZED`.
+ * Reads the access JWT from the `aep_at` HttpOnly cookie. Routes decorated
+ * with `@Public()` are skipped entirely.
  */
 @Injectable()
 export class JwtAuthGuard extends AuthGuard('jwt-cookie') {
@@ -34,16 +33,14 @@ export class JwtAuthGuard extends AuthGuard('jwt-cookie') {
     return super.canActivate(context);
   }
 
-  /** Pull the JWT out of the cookie before passport tries to verify it. */
   override getRequest(context: ExecutionContext) {
     const req = context.switchToHttp().getRequest<Request>();
-    const cookieToken = (req.cookies?.[COOKIE_ACCESS] as string | undefined) ?? '';
-    // Passport will read `req.headers.authorization`; we synthesise a
-    // Bearer header from the cookie so the same JwtStrategy can verify
-    // either source.
-    req.headers.authorization = cookieToken
-      ? `Bearer ${cookieToken}`
-      : (req.headers.authorization ?? '');
+    const cookieToken = (req.cookies as Record<string, unknown> | undefined)?.[
+      COOKIE_ACCESS
+    ];
+    if (typeof cookieToken === 'string') {
+      req.headers.authorization = `Bearer ${cookieToken}`;
+    }
     return req;
   }
 
@@ -56,10 +53,10 @@ export class JwtAuthGuard extends AuthGuard('jwt-cookie') {
       const reason =
         (err as Error | undefined)?.message ??
         (typeof info === 'object' && info && 'message' in info
-          ? String((info as { message: unknown }).message)
+          ? String(info.message)
           : 'missing or invalid token');
       throw new UnauthorizedException(reason);
     }
-    return user as T;
+    return user;
   }
 }

@@ -69,7 +69,10 @@ describe('Auth & engagement (e2e)', () => {
     return raw;
   }
 
-  function extractCookie(res: request.Response, name: string): string | undefined {
+  function extractCookie(
+    res: request.Response,
+    name: string,
+  ): string | undefined {
     // supertest aggregates Set-Cookie strings in `res.headers['set-cookie']`.
     const raw = res.headers['set-cookie'] ?? [];
     const list = Array.isArray(raw) ? raw : [raw];
@@ -102,9 +105,7 @@ describe('Auth & engagement (e2e)', () => {
   }
 
   it('rejects anonymous `GET /me` with 401', async () => {
-    await request(app.getHttpServer())
-      .get('/api/v1/auth/me')
-      .expect(401);
+    await request(app.getHttpServer()).get('/api/v1/auth/me').expect(401);
   });
 
   it('signs a new member up, returns cookies, and lets them call /me', async () => {
@@ -131,7 +132,9 @@ describe('Auth & engagement (e2e)', () => {
     await prisma.refreshToken.deleteMany({
       where: { user: { email: user.email } },
     });
-    await prisma.user.delete({ where: { email: user.email } }).catch(() => undefined);
+    await prisma.user
+      .delete({ where: { email: user.email } })
+      .catch(() => undefined);
   });
 
   it('logs an existing member back in and rejects bad passwords', async () => {
@@ -160,7 +163,9 @@ describe('Auth & engagement (e2e)', () => {
     await prisma.refreshToken.deleteMany({
       where: { user: { email: user.email } },
     });
-    await prisma.user.delete({ where: { email: user.email } }).catch(() => undefined);
+    await prisma.user
+      .delete({ where: { email: user.email } })
+      .catch(() => undefined);
   });
 
   it('rejects POST /likes without an X-CSRF-Token, then succeeds with one', async () => {
@@ -174,7 +179,16 @@ describe('Auth & engagement (e2e)', () => {
     // First, make an episode to like. We seed one directly through Prisma
     // so the test doesn't depend on the catalog endpoints.
     const season = await prisma.season.create({
-      data: { series: { create: { title: 'CSRF test series', slug: `csrf-${randomBytes(4).toString('hex')}` } }, seasonNumber: 1, title: 'S1' },
+      data: {
+        series: {
+          create: {
+            title: 'CSRF test series',
+            slug: `csrf-${randomBytes(4).toString('hex')}`,
+          },
+        },
+        seasonNumber: 1,
+        title: 'S1',
+      },
     });
     const episode = await prisma.episode.create({
       data: { seasonId: season.id, episodeNumber: 1, title: 'CSRF ep' },
@@ -200,10 +214,18 @@ describe('Auth & engagement (e2e)', () => {
       where: { user: { email: user.email } },
     });
     await prisma.like.deleteMany({ where: { user: { email: user.email } } });
-    await prisma.user.delete({ where: { email: user.email } }).catch(() => undefined);
-    await prisma.episode.delete({ where: { id: episode.id } }).catch(() => undefined);
-    await prisma.season.delete({ where: { id: season.id } }).catch(() => undefined);
-    await prisma.series.delete({ where: { id: season.seriesId } }).catch(() => undefined);
+    await prisma.user
+      .delete({ where: { email: user.email } })
+      .catch(() => undefined);
+    await prisma.episode
+      .delete({ where: { id: episode.id } })
+      .catch(() => undefined);
+    await prisma.season
+      .delete({ where: { id: season.id } })
+      .catch(() => undefined);
+    await prisma.series
+      .delete({ where: { id: season.seriesId } })
+      .catch(() => undefined);
   });
 
   it('rotates the refresh token and rejects the old one afterwards', async () => {
@@ -216,7 +238,8 @@ describe('Auth & engagement (e2e)', () => {
 
     const refresh = await request(app.getHttpServer())
       .post('/api/v1/auth/refresh')
-      .set('Cookie', `aep_rt=${initial.refresh}`)
+      .set('Cookie', initial.jar)
+      .set('X-CSRF-Token', initial.csrf)
       .expect(200);
     const rotated = cookiesForRequests(refresh);
     expect(rotated.refresh).toBeTruthy();
@@ -225,13 +248,16 @@ describe('Auth & engagement (e2e)', () => {
     // Old refresh token should now be revoked → 401
     await request(app.getHttpServer())
       .post('/api/v1/auth/refresh')
-      .set('Cookie', `aep_rt=${initial.refresh}`)
+      .set('Cookie', initial.jar)
+      .set('X-CSRF-Token', initial.csrf)
       .expect(401);
 
     await prisma.refreshToken.deleteMany({
       where: { user: { email: user.email } },
     });
-    await prisma.user.delete({ where: { email: user.email } }).catch(() => undefined);
+    await prisma.user
+      .delete({ where: { email: user.email } })
+      .catch(() => undefined);
   });
 
   it('denies a non-admin from POST /admin/uploads with 403', async () => {
@@ -253,7 +279,9 @@ describe('Auth & engagement (e2e)', () => {
     await prisma.refreshToken.deleteMany({
       where: { user: { email: user.email } },
     });
-    await prisma.user.delete({ where: { email: user.email } }).catch(() => undefined);
+    await prisma.user
+      .delete({ where: { email: user.email } })
+      .catch(() => undefined);
   });
 
   it('lets an admin post to /admin/uploads with a multipart file', async () => {
@@ -294,7 +322,10 @@ describe('Auth & engagement (e2e)', () => {
       .post('/api/v1/admin/uploads')
       .set('Cookie', jar)
       .set('X-CSRF-Token', csrf)
-      .attach('file', tinyMp4, { filename: 'tiny.mp4', contentType: 'video/mp4' })
+      .attach('file', tinyMp4, {
+        filename: 'tiny.mp4',
+        contentType: 'video/mp4',
+      })
       .field('episodeTitle', 'Admin e2e episode')
       .field('seriesTitle', 'Admin e2e series')
       .expect(201);
@@ -326,6 +357,8 @@ describe('Auth & engagement (e2e)', () => {
     await prisma.refreshToken.deleteMany({
       where: { user: { email: user.email } },
     });
-    await prisma.user.delete({ where: { email: user.email } }).catch(() => undefined);
+    await prisma.user
+      .delete({ where: { email: user.email } })
+      .catch(() => undefined);
   });
 });

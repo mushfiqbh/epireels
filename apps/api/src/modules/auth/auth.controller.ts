@@ -16,6 +16,7 @@ import {
   COOKIE_REFRESH,
 } from './auth.service';
 import { Public } from '../../common/decorators/public.decorator';
+import { CsrfExempt } from '../../common/decorators/csrf-exempt.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { JwtPayload } from './auth.service';
 import { LoginDto } from './dto/login.dto';
@@ -32,6 +33,7 @@ import { randomBytes } from 'node:crypto';
  *   POST /api/v1/auth/login     Verify password, issue cookies.
  *   POST /api/v1/auth/refresh   Rotate the refresh token.
  *   POST /api/v1/auth/logout    Revoke the refresh token, clear cookies.
+ *   GET  /api/v1/auth/csrf     Bootstrap a CSRF token for a browser client.
  *   GET  /api/v1/auth/me        Return the current user + csrf token.
  */
 @Controller('api/v1/auth')
@@ -43,6 +45,7 @@ export class AuthController {
   ) {}
 
   @Public()
+  @CsrfExempt()
   @Post('signup')
   @HttpCode(201)
   async signup(
@@ -59,6 +62,7 @@ export class AuthController {
   }
 
   @Public()
+  @CsrfExempt()
   @Post('login')
   @HttpCode(200)
   async login(
@@ -72,6 +76,12 @@ export class AuthController {
     });
     const csrfToken = this.applySessionCookies(res, session);
     return { user, csrfToken };
+  }
+
+  @Public()
+  @Get('csrf')
+  csrf(@Res({ passthrough: true }) res: Response) {
+    return { csrfToken: this.rotateCsrfCookie(res) };
   }
 
   @Public()

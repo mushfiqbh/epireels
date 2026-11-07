@@ -8,13 +8,13 @@ import { Reflector } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { Request } from 'express';
-import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
+import { CSRF_EXEMPT_KEY } from '../decorators/csrf-exempt.decorator';
 import { COOKIE_CSRF, COOKIE_ACCESS } from '../../modules/auth/auth.service';
 
 /**
  * Double-submit cookie CSRF guard.
  *
- * For every non-`@Public()` request using a non-safe method
+ * For every non-exempt request using a non-safe method
  * (anything other than GET / HEAD / OPTIONS), the `X-CSRF-Token`
  * request header must contain a server-signed token. When the
  * `aep_csrf` cookie is available, it must also match the header.
@@ -32,11 +32,11 @@ export class CsrfGuard implements CanActivate {
   ) {}
 
   canActivate(context: ExecutionContext): boolean {
-    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
-      context.getHandler(),
-      context.getClass(),
-    ]);
-    if (isPublic) return true;
+    const isExempt = this.reflector.getAllAndOverride<boolean>(
+      CSRF_EXEMPT_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+    if (isExempt) return true;
 
     const req = context.switchToHttp().getRequest<Request>();
     const method = req.method.toUpperCase();
@@ -44,6 +44,11 @@ export class CsrfGuard implements CanActivate {
     if (safe) return true;
 
     const cookies = (req.cookies ?? {}) as Record<string, string>;
+    const hasCookieSession = Boolean(cookies[COOKIE_ACCESS]);
+    const authorization = req.headers.authorization ?? '';
+    if (!hasCookieSession && /^Bearer\s+\S+$/i.test(authorization)) {
+      return true;
+    }
     const headerToken =
       (req.headers['x-csrf-token'] as string | undefined) ?? '';
     const cookieToken = cookies[COOKIE_CSRF] ?? '';
@@ -59,10 +64,10 @@ export class CsrfGuard implements CanActivate {
       throw new ForbiddenException('CSRF token mismatch');
     }
 
-    // For state-changing requests we also require the access cookie to
-    // be present. This guards against a stale CSRF cookie being replayed
-    // after the user logged out.
-    if (!cookies[COOKIE_ACCESS]) {
+    // Bearer-token clients explicitly send their credential and are not
+    // vulnerable to browser ambient-cookie CSRF. Cookie sessions must have
+    // an access cookie so a stale CSRF token cannot be replayed after logout.
+    if (!hasCookieSession) {
       throw new ForbiddenException('Session cookie missing');
     }
 
