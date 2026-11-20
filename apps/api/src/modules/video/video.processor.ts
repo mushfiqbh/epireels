@@ -1,9 +1,16 @@
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
+import * as os from 'os';
 import * as path from 'path';
 import { promisify } from 'util';
-import { Inject, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+  OnModuleInit,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { STORAGE_SERVICE, StorageService } from '../storage/storage.interface';
 import { ProbeResult, VIDEO_PROCESSING_STATUS } from './video.types';
@@ -40,6 +47,8 @@ const POSTER_MIME = 'image/webp';
 @Injectable()
 export class VideoProcessor implements OnModuleInit {
   private readonly logger = new Logger(VideoProcessor.name);
+  private readonly progressByVideo = new Map<string, number>();
+  private readonly progressWrites = new Map<string, Promise<void>>();
   private ffmpegPath!: string;
   private ffprobePath!: string;
 
@@ -72,25 +81,30 @@ export class VideoProcessor implements OnModuleInit {
     const masterKey = `${outputRoot}/master.m3u8`;
 
     await this.markStatus(videoId, VIDEO_PROCESSING_STATUS.PROCESSING, null);
+    this.progressByVideo.set(videoId, 0);
+    await this.setProgress(videoId, 3);
 
     // Driver-agnostic input acquisition. The local driver returns the
     // on-disk path verbatim; the S3 driver streams the original into
     // a tempdir entry we own for the duration of this call.
     let sourcePath: string | null = null;
     let tempSourcePath: string | null = null;
+    let processingDurationSeconds = video.durationSeconds;
     const completedRenditions: Rendition[] = [];
     let workRoot: string | null = null;
 
     try {
       sourcePath = await this.storage.downloadToTemp(video.filePath);
       tempSourcePath = sourcePath;
+      await this.setProgress(videoId, 8);
       workRoot = await fsp.mkdtemp(
-        path.join(require('os').tmpdir(), `epireels-${videoId}-`),
+        path.join(os.tmpdir(), `epireels-${videoId}-`),
       );
 
       // ── 1. Probe ────────────────────────────────────────────────
       try {
         const probe = await this.probe(sourcePath);
+        processingDurationSeconds = probe.durationSeconds;
         await this.prisma.video.update({
           where: { id: videoId },
           data: {
@@ -99,6 +113,7 @@ export class VideoProcessor implements OnModuleInit {
             height: probe.height,
           },
         });
+        await this.setProgress(videoId, 10);
       } catch (error) {
         await this.fail(videoId, error, {
           outputRoot,
@@ -106,7 +121,6 @@ export class VideoProcessor implements OnModuleInit {
         });
         return;
       }
-
       // ── 2. Poster (single frame, cheap, fast) ──────────────────
       let posterWritten = false;
       try {
@@ -119,6 +133,7 @@ export class VideoProcessor implements OnModuleInit {
           `Poster generation failed for ${videoId}: ${asMessage(error)}`,
         );
       }
+      await this.setProgress(videoId, 15);
 
       // ── 3. HLS renditions ───────────────────────────────────────
       for (const rendition of RENDITIONS) {
@@ -127,18 +142,42 @@ export class VideoProcessor implements OnModuleInit {
           const renditionWorkDir = await fsp.mkdtemp(
             path.join(workRoot, `${rendition.key}-`),
           );
-          await this.generateVariant(sourcePath, renditionWorkDir, rendition.height);
+          const baseProgress = rendition.key === '360p' ? 15 : 55;
+          const renditionProgress = 30;
+          await this.generateVariant(
+            sourcePath,
+            renditionWorkDir,
+            rendition.height,
+            processingDurationSeconds,
+            (ratio) => {
+              void this.setProgress(
+                videoId,
+                baseProgress + ratio * renditionProgress,
+              );
+            },
+          );
+          await this.setProgress(videoId, baseProgress + renditionProgress);
           await this.uploadRenditionOutputs(
             renditionWorkDir,
             renditionDir,
             rendition.key,
+            (ratio) => {
+              void this.setProgress(
+                videoId,
+                baseProgress + renditionProgress + ratio * 10,
+              );
+            },
+          );
+          await this.setProgress(
+            videoId,
+            baseProgress + renditionProgress + 10,
           );
           completedRenditions.push({
             ...rendition,
             // Pin the local playlist path so the master playlist
             // writer can verify each variant actually shipped.
             playlistLocalPath: path.join(renditionWorkDir, 'playlist.m3u8'),
-          } as Rendition);
+          });
 
           if (completedRenditions.length === 1) {
             await this.publishReady(videoId, {
@@ -172,6 +211,7 @@ export class VideoProcessor implements OnModuleInit {
           where: { id: videoId },
           data: { processingError: null, updatedAt: new Date() },
         });
+        await this.setProgress(videoId, 100);
         this.logger.log(
           `Processed video ${videoId} (${completedRenditions.map((r) => r.key).join(', ')})`,
         );
@@ -184,12 +224,20 @@ export class VideoProcessor implements OnModuleInit {
     } finally {
       // Best-effort cleanup of the temp source copy (S3 driver) and
       // the workdir regardless of success/failure.
-      if (tempSourcePath && tempSourcePath !== this.safeGetPath(video.filePath)) {
+      if (
+        tempSourcePath &&
+        tempSourcePath !== this.safeGetPath(video.filePath)
+      ) {
         await fsp.unlink(tempSourcePath).catch(() => undefined);
       }
       if (workRoot) {
-        await fsp.rm(workRoot, { recursive: true, force: true }).catch(() => undefined);
+        await fsp
+          .rm(workRoot, { recursive: true, force: true })
+          .catch(() => undefined);
       }
+      await this.progressWrites.get(videoId);
+      this.progressByVideo.delete(videoId);
+      this.progressWrites.delete(videoId);
     }
   }
 
@@ -204,19 +252,34 @@ export class VideoProcessor implements OnModuleInit {
     localDir: string,
     remoteDir: string,
     renditionKey: string,
+    onProgress: (ratio: number) => void,
   ): Promise<void> {
     const files = await fsp.readdir(localDir);
-    for (const name of files) {
-      const localPath = path.join(localDir, name);
-      const stat = await fsp.stat(localPath);
-      if (!stat.isFile()) continue;
-      const mime = name === 'playlist.m3u8'
-        ? PLAYLIST_MIME
-        : name.endsWith('.m4s')
-          ? SEGMENT_MIME
-          : 'application/octet-stream';
+    const filePaths = await Promise.all(
+      files.map(async (name) => {
+        const localPath = path.join(localDir, name);
+        const stat = await fsp.stat(localPath);
+        return stat.isFile() ? { name, localPath, size: stat.size } : null;
+      }),
+    );
+    const uploadFiles = filePaths.filter(
+      (file): file is { name: string; localPath: string; size: number } =>
+        file !== null,
+    );
+    const totalBytes = uploadFiles.reduce((sum, file) => sum + file.size, 0);
+    let uploadedBytes = 0;
+    for (const file of uploadFiles) {
+      const { name, localPath, size } = file;
+      const mime =
+        name === 'playlist.m3u8'
+          ? PLAYLIST_MIME
+          : name.endsWith('.m4s')
+            ? SEGMENT_MIME
+            : 'application/octet-stream';
       const key = `${remoteDir}/${name}`;
       await this.storage.uploadFile(localPath, key, mime);
+      uploadedBytes += size;
+      onProgress(totalBytes > 0 ? uploadedBytes / totalBytes : 1);
       void renditionKey;
     }
   }
@@ -285,12 +348,17 @@ export class VideoProcessor implements OnModuleInit {
     sourcePath: string,
     outputDirectory: string,
     height: number,
+    durationSeconds: number,
+    onProgress: (ratio: number) => void,
   ): Promise<void> {
     await fsp.mkdir(outputDirectory, { recursive: true });
-    await this.run(
+    await this.runWithProgress(
       this.ffmpegPath,
       [
         '-y',
+        '-progress',
+        'pipe:1',
+        '-nostats',
         '-i',
         sourcePath,
         '-vf',
@@ -320,6 +388,8 @@ export class VideoProcessor implements OnModuleInit {
         'playlist.m3u8',
       ],
       { cwd: outputDirectory },
+      durationSeconds,
+      onProgress,
     );
   }
 
@@ -368,6 +438,28 @@ export class VideoProcessor implements OnModuleInit {
         data: { processingStatus: status, processingError: error },
       })
       .catch(() => undefined);
+  }
+
+  getProgress(videoId: string): number | undefined {
+    return this.progressByVideo.get(videoId);
+  }
+
+  private async setProgress(videoId: string, value: number): Promise<void> {
+    const current = this.progressByVideo.get(videoId) ?? 0;
+    const next = Math.max(current, Math.min(100, Math.floor(value)));
+    if (next === current) return;
+    this.progressByVideo.set(videoId, next);
+    const previousWrite = this.progressWrites.get(videoId) ?? Promise.resolve();
+    const nextWrite = previousWrite.then(async () => {
+      await this.prisma.video
+        .update({
+          where: { id: videoId },
+          data: { processingProgress: next },
+        })
+        .catch(() => undefined);
+    });
+    this.progressWrites.set(videoId, nextWrite);
+    await nextWrite;
   }
 
   /**
@@ -428,6 +520,56 @@ export class VideoProcessor implements OnModuleInit {
       const enriched = new Error(formatFfmpegError(command, args, error));
       throw enriched;
     }
+  }
+
+  private async runWithProgress(
+    command: string,
+    args: string[],
+    options: { cwd?: string },
+    durationSeconds: number,
+    onProgress: (ratio: number) => void,
+  ): Promise<void> {
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn(command, args, { ...options, windowsHide: true });
+      let stderr = '';
+      let stdoutBuffer = '';
+
+      child.stdout.setEncoding('utf8');
+      child.stderr.setEncoding('utf8');
+      child.stdout.on('data', (chunk: string) => {
+        stdoutBuffer += chunk;
+        const outTime = /(?:^|\n)out_time_ms=(\d+)/g;
+        let match: RegExpExecArray | null;
+        while ((match = outTime.exec(stdoutBuffer)) !== null) {
+          const elapsedSeconds = Number(match[1]) / 1_000_000;
+          const ratio =
+            durationSeconds > 0 ? elapsedSeconds / durationSeconds : 0;
+          onProgress(Math.max(0, Math.min(0.99, ratio)));
+        }
+        stdoutBuffer = stdoutBuffer.slice(-256);
+      });
+      child.stderr.on('data', (chunk: string) => {
+        stderr = `${stderr}${chunk}`.slice(-16_000);
+      });
+      child.once('error', (error) => {
+        reject(new Error(formatFfmpegError(command, args, error)));
+      });
+      child.once('close', (code) => {
+        if (code === 0) {
+          resolve();
+          return;
+        }
+        reject(
+          new Error(
+            formatFfmpegError(command, args, {
+              message: `ffmpeg exited with code ${code}`,
+              stderr,
+              code: code === null ? undefined : String(code),
+            }),
+          ),
+        );
+      });
+    });
   }
 }
 

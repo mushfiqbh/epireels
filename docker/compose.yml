@@ -17,5 +17,45 @@ services:
       timeout: 5s
       retries: 10
 
+  localstack:
+    image: localstack/localstack:latest
+    container_name: epireels-localstack
+    restart: unless-stopped
+    environment:
+      SERVICES: s3
+      LOCALSTACK_AUTH_TOKEN: ${LOCALSTACK_AUTH_TOKEN:?Set LOCALSTACK_AUTH_TOKEN in .env}
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      PERSISTENCE: "1"
+    ports:
+      - "4566:4566"
+    volumes:
+      - epireels-localstack-data:/var/lib/localstack
+    healthcheck:
+      test: ["CMD", "bash", "-c", "curl -fsS http://localhost:4566/_localstack/health | grep -q 's3'"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  localstack-s3-init:
+    image: amazon/aws-cli:latest
+    depends_on:
+      localstack:
+        condition: service_healthy
+    environment:
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        aws --endpoint-url=http://localstack:4566 s3api head-bucket --bucket epireels-videos >/dev/null 2>&1
+        || aws --endpoint-url=http://localstack:4566 s3api create-bucket --bucket epireels-videos;
+        aws --endpoint-url=http://localstack:4566 s3api put-bucket-cors --bucket epireels-videos
+        --cors-configuration '{"CORSRules":[{"AllowedHeaders":["*"],"AllowedMethods":["GET","HEAD","PUT","POST"],"AllowedOrigins":["http://localhost:3000","http://localhost:4000","http://localhost:8081"],"ExposeHeaders":["ETag","Content-Length","Content-Range","Accept-Ranges"],"MaxAgeSeconds":3000}]}'
+    restart: "no"
+
 volumes:
   acme-postgres-data:
+  epireels-localstack-data:

@@ -64,20 +64,10 @@ export class UploadsService {
 
     const probed = probeMp4(params.file.buffer);
 
-    const response: AdminUploadResponseDto = {
-      key,
-      url,
-      mimeType: params.file.mimetype || 'application/octet-stream',
-      size: params.file.size,
-      durationSeconds: probed.durationSeconds,
-      width: probed.width,
-      height: probed.height,
-      videoId,
-      processingStatus: 'UPLOADED',
-    };
-
+    const mimeType = params.file.mimetype || 'application/octet-stream';
+    let persisted: Awaited<ReturnType<UploadsService['persistUpload']>>;
     try {
-      const { episode, seriesId: resultingSeriesId } = await this.persistUpload({
+      persisted = await this.persistUpload({
         ownerId: params.ownerId,
         videoId,
         seriesId: params.seriesId,
@@ -87,21 +77,35 @@ export class UploadsService {
         seasonNumber: params.seasonNumber,
         episodeNumber: params.episodeNumber,
         filePath: key,
-        mimeType: response.mimeType,
+        mimeType,
         fileSize: params.file.size,
         durationSeconds: probed.durationSeconds,
         width: probed.width,
         height: probed.height,
       });
-      response.episode = {
-        id: episode.id,
-        title: episode.title,
-        seriesId: resultingSeriesId,
-      };
     } catch (error) {
       await this.storage.delete(key);
       throw error;
     }
+
+    const response: AdminUploadResponseDto = {
+      uploadId: persisted.upload.id,
+      key,
+      url,
+      mimeType,
+      size: params.file.size,
+      durationSeconds: probed.durationSeconds,
+      width: probed.width,
+      height: probed.height,
+      videoId,
+      processingStatus: 'UPLOADED',
+      processingProgress: 0,
+      episode: {
+        id: persisted.episode.id,
+        title: persisted.episode.title,
+        seriesId: persisted.seriesId,
+      },
+    };
 
     void this.videoProcessor.process(videoId);
 
@@ -119,7 +123,11 @@ export class UploadsService {
   }
 
   /** Remove an upload, but only if the caller owns it. */
-  async removeOwned(uploadId: string, ownerId: string, role?: string): Promise<void> {
+  async removeOwned(
+    uploadId: string,
+    ownerId: string,
+    role?: string,
+  ): Promise<void> {
     const row = await this.prisma.upload.findUnique({
       where: { id: uploadId },
       include: { videos: true },

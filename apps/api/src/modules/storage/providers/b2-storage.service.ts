@@ -14,10 +14,12 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { Upload } from '@aws-sdk/lib-storage';
+import { createWriteStream } from 'fs';
 import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import { Readable } from 'stream';
+import { pipeline } from 'stream/promises';
 import {
   PresignOptions,
   PresignedUpload,
@@ -413,28 +415,14 @@ async function streamToFile(
   source: Readable,
   destination: string,
 ): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    source.on('data', (chunk: Buffer | Uint8Array | string) => {
-      chunks.push(
-        Buffer.isBuffer(chunk)
-          ? chunk
-          : typeof chunk === 'string'
-            ? Buffer.from(chunk)
-            : Buffer.from(chunk),
-      );
-    });
-    source.on('end', () => resolve());
-    source.on('error', reject);
-    source.on('end', () => {
-      void fsp
-        .writeFile(destination, Buffer.concat(chunks))
-        .then(() => undefined);
-    });
-  }).catch(async (err) => {
+  try {
+    // Resolve only after the entire response body has been flushed to disk;
+    // the processor invokes ffprobe as soon as downloadToTemp() returns.
+    await pipeline(source, createWriteStream(destination));
+  } catch (err) {
     await fsp.unlink(destination).catch(() => undefined);
     throw err;
-  });
+  }
 }
 
 function randomToken(): string {

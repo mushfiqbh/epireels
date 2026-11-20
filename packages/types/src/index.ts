@@ -255,6 +255,8 @@ export interface VideoPlaybackDto {
 
 /** Response payload returned by `POST /api/v1/admin/uploads`. */
 export interface AdminUploadResponseDto {
+  /** Newly created owner upload row, used to replace the optimistic Studio row. */
+  uploadId: string;
   videoId: string;
   /** Storage key the file was written to. */
   key: string;
@@ -267,6 +269,8 @@ export interface AdminUploadResponseDto {
   width: number;
   height: number;
   processingStatus: VideoProcessingStatus | string;
+  /** Encoding progress from 0 to 100. */
+  processingProgress: number;
   /** Episode the uploaded video was attached to, if any. */
   episode?: {
     id: string;

@@ -9,7 +9,7 @@ import {
   type PointerEvent,
   type Ref,
 } from "react";
-import { Maximize2, Minimize2, Pause, Play, RectangleHorizontal, RotateCcw, RotateCw, Volume2, VolumeX } from "lucide-react";
+import { Maximize2, Minimize2, Pause, Play, RotateCcw, RotateCw, Volume2, VolumeX } from "lucide-react";
 import type { Episode } from "@/lib/types";
 import { clamp, formatTime } from "@/lib/utils";
 import { fetchVideoPlayback } from "@/lib/api/reels";
@@ -71,8 +71,6 @@ export default function VideoPlayer({
   landscape = false,
   onControlsVisibleChange,
   onToggleMute,
-  theatre = false,
-  onToggleTheatre,
   isFullscreen = false,
   onToggleFullscreen,
 }: VideoPlayerProps) {

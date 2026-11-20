@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -24,6 +25,9 @@ import { createObserveModule } from '@nestjs/observe';
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 @Module({
   imports: [
+    // Global guards are instantiated from the root module, so configuration
+    // must be available here rather than only inside feature modules.
+    ConfigModule.forRoot({ isGlobal: true }),
     LoggingModule,
     PrismaModule,
     StorageModule,

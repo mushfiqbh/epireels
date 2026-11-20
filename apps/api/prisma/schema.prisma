@@ -121,6 +121,7 @@ model Video {
   width            Int      @default(0)
   height           Int      @default(0)
   processingStatus  String   @default("UPLOADED") @map("processing_status")
+  processingProgress Int     @default(0) @map("processing_progress")
   thumbnailPath     String?  @map("thumbnail_path")
   streamPath        String?  @map("stream_path")
   processingError   String?  @db.Text @map("processing_error")

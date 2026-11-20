@@ -11,8 +11,16 @@ export interface UploadItem {
   description: string | null;
   status: string;
   processingStatus: string;
+  processingProgress: number;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface PendingUploadItem extends UploadItem {
+  uploadState: "uploading" | "processing" | "failed";
+  uploadProgress: number;
+  uploadError?: string;
+  fileName: string;
 }
 
 export interface UploadsResponse {

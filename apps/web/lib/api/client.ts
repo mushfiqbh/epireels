@@ -92,7 +92,7 @@ export function setCsrfToken(token: string | undefined): void {
 }
 
 /** Recover the token after a hard reload or an auth-provider race. */
-async function ensureCsrfToken(): Promise<string | undefined> {
+export async function ensureCsrfToken(): Promise<string | undefined> {
   const existing = getCsrfToken();
   if (existing) return existing;
   if (csrfBootstrapInFlight) return csrfBootstrapInFlight;

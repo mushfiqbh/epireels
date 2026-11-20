@@ -5,7 +5,7 @@
  * authentication and assigns ownership to the caller.
  */
 import type { AdminUploadResponseDto } from "@epireels/types";
-import { apiFetch, ApiError } from "./client";
+import { apiUrl, ApiError, ensureCsrfToken } from "./client";
 
 /** Re-export of the shared upload response. */
 export type AdminUploadResponse = AdminUploadResponseDto;
@@ -25,6 +25,7 @@ export interface UploadVideoInput {
  */
 export async function uploadVideo(
   input: UploadVideoInput,
+  onProgress?: (bytesSent: number, totalBytes: number) => void,
 ): Promise<AdminUploadResponseDto> {
   const form = new FormData();
   form.append("file", input.file);
@@ -40,11 +41,38 @@ export async function uploadVideo(
   }
 
   try {
-    return await apiFetch<AdminUploadResponseDto>("/api/v1/uploads", {
-      method: "POST",
-      body: form,
-      // Important: do NOT set Content-Type. The browser will add the
-      // multipart boundary itself.
+    const csrfToken = await ensureCsrfToken();
+    return await new Promise<AdminUploadResponseDto>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", apiUrl("/api/v1/uploads"));
+      xhr.withCredentials = true;
+      if (csrfToken) xhr.setRequestHeader("x-csrf-token", csrfToken);
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) onProgress?.(event.loaded, event.total);
+      };
+      xhr.onload = () => {
+        let body: unknown;
+        try {
+          body = JSON.parse(xhr.responseText);
+        } catch {
+          body = undefined;
+        }
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(body as AdminUploadResponseDto);
+          return;
+        }
+        const message =
+          typeof body === "object" && body !== null && "message" in body
+            ? String((body as { message: unknown }).message)
+            : `Request failed: ${xhr.status} ${xhr.statusText}`;
+        reject(new ApiError(message, xhr.status, apiUrl("/api/v1/uploads"), body));
+      };
+      xhr.onerror = () =>
+        reject(new ApiError("Network error uploading video", 0, apiUrl("/api/v1/uploads")));
+      xhr.onabort = () =>
+        reject(new ApiError("Upload aborted", 0, apiUrl("/api/v1/uploads")));
+      // Leave Content-Type unset so XHR supplies the multipart boundary.
+      xhr.send(form);
     });
   } catch (err) {
     if (err instanceof ApiError) throw err;

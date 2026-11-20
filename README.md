@@ -54,6 +54,12 @@ docker compose -f docker/compose.yml up -d
 pnpm --filter @epireels/api db:generate
 ```
 
+The compose stack starts PostgreSQL and a persistent LocalStack S3 service at
+`http://localhost:4566`. It creates the `epireels-videos` bucket automatically.
+For local S3 storage, set `STORAGE_DRIVER=s3` in `apps/api/.env` and configure
+`B2_ENDPOINT=http://localhost:4566`, `B2_REGION=us-east-1`,
+`B2_KEY_ID=test`, `B2_APPLICATION_KEY=test`, and `B2_BUCKET=epireels-videos`.
+
 For a hosted PostgreSQL database, set both `DATABASE_URL` and `DIRECT_URL` in
 `apps/api/.env`. `DATABASE_URL` is used by the application, while `DIRECT_URL`
 is used for Prisma migrations and introspection.

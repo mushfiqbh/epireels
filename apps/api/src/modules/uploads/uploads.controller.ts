@@ -14,6 +14,7 @@ import { UploadsService } from './uploads.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../auth/auth.service';
 import type { MulterFile, AdminUploadResponseDto } from './dto/upload.dto';
+import { VideoProcessor } from '../video/video.processor';
 
 /**
  * Member-upload endpoints.
@@ -29,7 +30,10 @@ import type { MulterFile, AdminUploadResponseDto } from './dto/upload.dto';
  */
 @Controller('api/v1/uploads')
 export class UploadsController {
-  constructor(private readonly uploads: UploadsService) {}
+  constructor(
+    private readonly uploads: UploadsService,
+    private readonly videoProcessor: VideoProcessor,
+  ) {}
 
   @Post()
   @HttpCode(201)
@@ -66,6 +70,11 @@ export class UploadsController {
         return {
           ...rest,
           processingStatus: video?.processingStatus ?? upload.status,
+          processingProgress: Math.max(
+            video?.processingProgress ??
+              (video?.processingStatus === 'READY' ? 100 : 0),
+            video ? (this.videoProcessor.getProgress(video.id) ?? 0) : 0,
+          ),
         };
       }),
     };
